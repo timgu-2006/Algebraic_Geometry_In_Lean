@@ -1,0 +1,8 @@
+# Lake / Lean project files
+.lake/
+lakefile.lean.lock
+lakefile.lean.lock.tmp
+# build artifacts
+*.olean
+# editor metadata
+.vscode/
