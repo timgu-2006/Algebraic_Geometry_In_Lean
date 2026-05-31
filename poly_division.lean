@@ -891,6 +891,70 @@ private lemma rgb_subset {I : Ideal (MvPolynomial σ k)}
 
 /-! #### Existence of reduced Gröbner bases -/
 
+open Classical in
+/-- Removing a dominated element preserves the GB property: if `g₁` has `m.degree g₁ ≤ m.degree g₀`,
+then `lterm g₀` lies in the ideal spanned by `lterm g₁`, so removing `g₀` from `G` still
+generates the same leading term ideal. -/
+private lemma gb_erase_dominated {I : Ideal (MvPolynomial σ k)}
+    {G : Finset (MvPolynomial σ k)} (hG : m.IsGroebnerBasis I G)
+    {g₀ g₁ : MvPolynomial σ k} (hg₀ : g₀ ∈ G) (hg₁ : g₁ ∈ G) (hne : g₀ ≠ g₁)
+    (hg₁ne : g₁ ≠ 0) (hdeg : m.degree g₁ ≤ m.degree g₀) :
+    m.IsGroebnerBasis I (G.erase g₀) := by
+  classical
+  constructor
+  · intro g hg
+    exact hG.1 g (Finset.mem_of_mem_erase hg)
+  · apply le_antisymm
+    · -- initialIdeal I ≤ span(lterms of G.erase g₀)
+      rw [hG.2]
+      apply Ideal.span_le.mpr
+      intro lt hlt
+      obtain ⟨g, hgG, rfl⟩ := hlt
+      by_cases hgg₀ : g = g₀
+      · -- lterm g₀ = monomial(deg g₀ - deg g₁)(lc g₀ * lc g₁⁻¹) * lterm g₁
+        have hlc₁ : m.leadingCoeff g₁ ≠ 0 := m.leadingCoeff_ne_zero_iff.mpr hg₁ne
+        have heq : m.leadingTerm g₀ =
+            monomial (m.degree g₀ - m.degree g₁) (m.leadingCoeff g₀ * (m.leadingCoeff g₁)⁻¹) *
+            m.leadingTerm g₁ := by
+          simp only [leadingTerm, monomial_mul, tsub_add_cancel_of_le hdeg,
+                     inv_mul_cancel_right₀ hlc₁]
+        rw [hgg₀, heq]
+        exact Ideal.mul_mem_left _ _
+          (Ideal.subset_span ⟨g₁, Finset.mem_coe.mpr (Finset.mem_erase.mpr ⟨hne.symm, hg₁⟩), rfl⟩)
+      · exact Ideal.subset_span ⟨g, Finset.mem_coe.mpr (Finset.mem_erase.mpr ⟨hgg₀, hgG⟩), rfl⟩
+    · -- span(lterms of G.erase g₀) ≤ initialIdeal I
+      rw [hG.2]
+      apply Ideal.span_mono
+      intro lt hlt
+      obtain ⟨g, hgG, rfl⟩ := hlt
+      exact ⟨g, Finset.mem_coe.mp (Finset.mem_of_mem_erase (Finset.mem_coe.mpr hgG)), rfl⟩
+
+open Classical in
+/-- Removing a zero element from a GB preserves the GB property. -/
+private lemma gb_erase_zero {I : Ideal (MvPolynomial σ k)}
+    {G : Finset (MvPolynomial σ k)} (hG : m.IsGroebnerBasis I G) (h0 : (0 : MvPolynomial σ k) ∈ G) :
+    m.IsGroebnerBasis I (G.erase 0) := by
+  classical
+  constructor
+  · intro g hg
+    exact hG.1 g (Finset.mem_of_mem_erase hg)
+  · apply le_antisymm
+    · rw [hG.2]
+      apply Ideal.span_le.mpr
+      intro lt hlt
+      obtain ⟨g, hgG, rfl⟩ := hlt
+      by_cases hg0 : g = 0
+      · subst hg0
+        simp only [MonomialOrder.leadingTerm, MonomialOrder.leadingCoeff,
+                   MvPolynomial.coeff_zero, map_zero, monomial_zero]
+        exact Submodule.zero_mem _
+      · exact Ideal.subset_span ⟨g, Finset.mem_coe.mpr (Finset.mem_erase.mpr ⟨hg0, hgG⟩), rfl⟩
+    · rw [hG.2]
+      apply Ideal.span_mono
+      intro lt hlt
+      obtain ⟨g, hgG, rfl⟩ := hlt
+      exact ⟨g, Finset.mem_coe.mp (Finset.mem_of_mem_erase (Finset.mem_coe.mpr hgG)), rfl⟩
+
 /-- From any Gröbner basis a minimal one exists: no LM of one element pointwise-divides
 another's LM. -/
 private lemma gb_minimal_exists [Finite σ] (I : Ideal (MvPolynomial σ k)) :
@@ -898,7 +962,74 @@ private lemma gb_minimal_exists [Finite σ] (I : Ideal (MvPolynomial σ k)) :
       m.IsGroebnerBasis I G ∧
       (∀ g : ↥G, (g : MvPolynomial σ k) ≠ 0) ∧
       (∀ g ∈ G, ∀ g' ∈ G, g ≠ g' → ¬ m.degree g' ≤ m.degree g) := by
-  sorry
+  classical
+  obtain ⟨G₀, hG₀⟩ := groebner_basis_exists (m := m) I
+  -- Induction on the cardinality of G to remove zeros and dominated elements
+  suffices h : ∀ n : ℕ, ∀ G : Finset (MvPolynomial σ k), G.card ≤ n →
+      m.IsGroebnerBasis I G →
+      ∃ G' : Finset (MvPolynomial σ k),
+        m.IsGroebnerBasis I G' ∧
+        (∀ g : ↥G', (g : MvPolynomial σ k) ≠ 0) ∧
+        (∀ g ∈ G', ∀ g' ∈ G', g ≠ g' → ¬ m.degree g' ≤ m.degree g) by
+    exact h G₀.card G₀ le_rfl hG₀
+  intro n
+  induction n with
+  | zero =>
+    intro G hcard hGbasis
+    have hG_empty : G = ∅ := Finset.card_eq_zero.mp (Nat.le_zero.mp hcard)
+    exact ⟨∅, hG_empty ▸ hGbasis,
+           fun ⟨g, hg⟩ => absurd hg (by simp),
+           fun g hg => absurd hg (by simp)⟩
+  | succ n ih =>
+    intro G hcard hGbasis
+    -- Check if G has a zero element
+    by_cases h0 : (0 : MvPolynomial σ k) ∈ G
+    · -- Remove the zero: G.erase 0 is still a GB with smaller card
+      have hcard' : (G.erase 0).card ≤ n :=
+        Nat.lt_succ_iff.mp (Nat.lt_of_lt_of_le (Finset.card_erase_lt_of_mem h0) hcard)
+      obtain ⟨G', hG'basis, hG'ne, hG'min⟩ := ih (G.erase 0) hcard' (gb_erase_zero hGbasis h0)
+      exact ⟨G', hG'basis, hG'ne, hG'min⟩
+    · -- Check if G has a dominated element
+      by_cases hdom : ∃ g₀ ∈ G, ∃ g₁ ∈ G, g₀ ≠ g₁ ∧ g₁ ≠ 0 ∧ m.degree g₁ ≤ m.degree g₀
+      · obtain ⟨g₀, hg₀, g₁, hg₁, hne, hg₁ne, hdeg⟩ := hdom
+        -- Remove g₀: G.erase g₀ is still a GB with smaller card
+        have hcard' : (G.erase g₀).card ≤ n :=
+          Nat.lt_succ_iff.mp (Nat.lt_of_lt_of_le (Finset.card_erase_lt_of_mem hg₀) hcard)
+        obtain ⟨G', hG'basis, hG'ne, hG'min⟩ :=
+          ih (G.erase g₀) hcard' (gb_erase_dominated hGbasis hg₀ hg₁ hne hg₁ne hdeg)
+        exact ⟨G', hG'basis, hG'ne, hG'min⟩
+      · -- No zero, no dominated: G is already minimal
+        push_neg at hdom
+        refine ⟨G, hGbasis, ?_, ?_⟩
+        · intro ⟨g, hg⟩
+          exact h0 ∘ (· ▸ hg)
+        · intro g hg g' hg' hgg'
+          intro hdeg
+          by_cases hg'ne : g' = 0
+          · exact h0 (hg'ne ▸ hg')
+          · exact (hdom g hg g' hg' hgg' hg'ne) hdeg
+
+/-- Helper: scaling by a nonzero constant preserves the degree. -/
+private lemma degree_smul_of_ne {c : k} {g : MvPolynomial σ k}
+    (hc : c ≠ 0) (hg : g ≠ 0) : m.degree (c • g) = m.degree g := by
+  classical
+  apply m.toSyn.injective
+  apply le_antisymm
+  · -- m.degree(c • g) ∈ support(g), so toSyn(deg(c•g)) ≤ toSyn(deg g)
+    have hmem : m.degree (c • g) ∈ g.support := by
+      have hcg : c • g ≠ 0 := smul_ne_zero hc hg
+      have hdeg_supp : m.degree (c • g) ∈ (c • g).support := m.degree_mem_support hcg
+      rw [mem_support_iff] at hdeg_supp ⊢
+      simp only [MvPolynomial.smul_eq_C_mul, coeff_C_mul] at hdeg_supp ⊢
+      exact fun h => hdeg_supp (by rw [h, mul_zero])
+    exact m.le_degree hmem
+  · -- m.degree g ∈ support(c • g), so toSyn(deg g) ≤ toSyn(deg(c•g))
+    have hmem : m.degree g ∈ (c • g).support := by
+      have hdeg_supp : m.degree g ∈ g.support := m.degree_mem_support hg
+      rw [mem_support_iff] at hdeg_supp ⊢
+      simp only [smul_eq_mul, MvPolynomial.smul_eq_C_mul, coeff_C_mul]
+      exact mul_ne_zero hc hdeg_supp
+    exact m.le_degree hmem
 
 /-- A minimal Gröbner basis can be made monic without losing the Gröbner or minimality property
 (divide each element by its leading coefficient). -/
@@ -907,7 +1038,68 @@ private lemma gb_monic_minimal_exists [Finite σ] (I : Ideal (MvPolynomial σ k)
       m.IsGroebnerBasis I G ∧
       (∀ g ∈ G, m.Monic g) ∧
       (∀ g ∈ G, ∀ g' ∈ G, g ≠ g' → ¬ m.degree g' ≤ m.degree g) := by
-  sorry
+  classical
+  obtain ⟨G₀, hG₀basis, hG₀ne, hG₀min⟩ := gb_minimal_exists (m := m) I
+  -- The new basis: normalize each element by its leading coefficient
+  let G := G₀.image (fun g => (m.leadingCoeff g)⁻¹ • g)
+  refine ⟨G, ?_, ?_, ?_⟩
+  · -- IsGroebnerBasis I G
+    constructor
+    · -- each element of G is in I
+      intro g hg
+      simp only [G, Finset.mem_image] at hg
+      obtain ⟨g₀, hg₀, rfl⟩ := hg
+      have hg₀ne : g₀ ≠ 0 := hG₀ne ⟨g₀, hg₀⟩
+      have hg₀I : g₀ ∈ I := hG₀basis.1 g₀ hg₀
+      have hlc : m.leadingCoeff g₀ ≠ 0 := m.leadingCoeff_ne_zero_iff.mpr hg₀ne
+      rw [Algebra.smul_def]
+      exact I.mul_mem_left _ hg₀I
+    · -- initialIdeal I = span(lterms of G)
+      rw [hG₀basis.2, span_leadingTerm_eq_span_leadingMonomial,
+          span_leadingTerm_eq_span_leadingMonomial]
+      congr 1
+      -- Show the degree images are the same
+      ext d
+      simp only [Set.mem_image, Set.mem_diff, Finset.mem_coe, Set.mem_singleton_iff]
+      constructor
+      · rintro ⟨s, ⟨g₀, ⟨⟨hg₀G₀, hg₀ne⟩, hdeg⟩⟩, rfl⟩
+        have hlc : m.leadingCoeff g₀ ≠ 0 := m.leadingCoeff_ne_zero_iff.mpr hg₀ne
+        exact ⟨s, ⟨(m.leadingCoeff g₀)⁻¹ • g₀,
+               ⟨Finset.mem_image_of_mem _ hg₀G₀, smul_ne_zero (inv_ne_zero hlc) hg₀ne⟩,
+               (degree_smul_of_ne (inv_ne_zero hlc) hg₀ne).trans hdeg⟩, rfl⟩
+      · rintro ⟨s, ⟨g, ⟨⟨hgG, hgne⟩, hdeg⟩⟩, rfl⟩
+        simp only [G, Finset.mem_image] at hgG
+        obtain ⟨g₀, hg₀G₀, rfl⟩ := hgG
+        have hg₀ne : g₀ ≠ 0 := hG₀ne ⟨g₀, hg₀G₀⟩
+        have hlc : m.leadingCoeff g₀ ≠ 0 := m.leadingCoeff_ne_zero_iff.mpr hg₀ne
+        exact ⟨s, ⟨g₀, ⟨hg₀G₀, hg₀ne⟩,
+               (degree_smul_of_ne (inv_ne_zero hlc) hg₀ne).symm.trans hdeg⟩, rfl⟩
+  · -- Monic
+    intro g hg
+    simp only [G, Finset.mem_image] at hg
+    obtain ⟨g₀, hg₀, rfl⟩ := hg
+    have hg₀ne : g₀ ≠ 0 := hG₀ne ⟨g₀, hg₀⟩
+    have hlc : m.leadingCoeff g₀ ≠ 0 := m.leadingCoeff_ne_zero_iff.mpr hg₀ne
+    have hdeg : m.degree ((m.leadingCoeff g₀)⁻¹ • g₀) = m.degree g₀ :=
+      degree_smul_of_ne (inv_ne_zero hlc) hg₀ne
+    show coeff (m.degree ((m.leadingCoeff g₀)⁻¹ • g₀)) ((m.leadingCoeff g₀)⁻¹ • g₀) = 1
+    rw [hdeg, MvPolynomial.smul_eq_C_mul, MvPolynomial.coeff_C_mul]
+    exact inv_mul_cancel₀ hlc
+  · -- Minimality
+    intro g hg g' hg' hgg'
+    simp only [G, Finset.mem_image] at hg hg'
+    obtain ⟨g₀, hg₀, rfl⟩ := hg
+    obtain ⟨g₀', hg₀', rfl⟩ := hg'
+    have hg₀ne : g₀ ≠ 0 := hG₀ne ⟨g₀, hg₀⟩
+    have hg₀'ne : g₀' ≠ 0 := hG₀ne ⟨g₀', hg₀'⟩
+    have hlc : m.leadingCoeff g₀ ≠ 0 := m.leadingCoeff_ne_zero_iff.mpr hg₀ne
+    have hlc' : m.leadingCoeff g₀' ≠ 0 := m.leadingCoeff_ne_zero_iff.mpr hg₀'ne
+    have hne : g₀ ≠ g₀' := by
+      intro heq; apply hgg'
+      simp [heq]
+    rw [degree_smul_of_ne (inv_ne_zero hlc') hg₀'ne,
+        degree_smul_of_ne (inv_ne_zero hlc) hg₀ne]
+    exact hG₀min g₀ hg₀ g₀' hg₀' hne
 
 /-- Reducing each element of a monic minimal Gröbner basis modulo the rest yields a reduced
 Gröbner basis. -/
@@ -917,7 +1109,197 @@ private lemma gb_reduce_to_rgb [Finite σ] (I : Ideal (MvPolynomial σ k))
     (hGmonic : ∀ g ∈ G, m.Monic g)
     (hGmin : ∀ g ∈ G, ∀ g' ∈ G, g ≠ g' → ¬ m.degree g' ≤ m.degree g) :
     ∃ G' : Finset (MvPolynomial σ k), m.IsReducedGroebnerBasis I G' := by
-  sorry
+  classical
+  -- For each g ∈ G, reduce it modulo G \ {g}
+  -- Index the basis elements as a function on ↥G
+  let b : ↥G → MvPolynomial σ k := fun g => (g : MvPolynomial σ k)
+  have hbne : ∀ g : ↥G, b g ≠ 0 := fun ⟨g, hg⟩ => (hGmonic g hg).ne_zero
+  -- For each g₀ ∈ G, apply division of g₀ by the subfamily indexed by G.erase g₀
+  -- We define r : MvPolynomial σ k → MvPolynomial σ k that divides by G \ {g}
+  -- For simplicity, use the division of each g ∈ G by the rest
+  -- We'll build G' = G.image r where r g is the remainder of g divided by G.erase g
+  -- Since this is complex, we use an auxiliary approach:
+  -- Show G itself works if already reduced, otherwise explicitly reduce
+  -- Actually, let's build G' directly using division
+  -- For each g ∈ G, get a remainder rg when dividing g by G.erase g
+  -- The key insight: rg has same leading term as g (by minimality)
+  -- and no monomial of rg is divisible by any LM of G \ {g} (by remainder condition)
+
+  -- Step 1: For each g ∈ G, define the indexing of G.erase g
+  -- We use m.div for each g ∈ G dividing by b_g : ↥(G.erase g) → MvPolynomial σ k
+  -- Collect the remainders
+  let rg : ∀ g₀ : MvPolynomial σ k, g₀ ∈ G →
+      { r : MvPolynomial σ k //
+        (∃ q : ↥(G.erase g₀) →₀ MvPolynomial σ k,
+          g₀ = Finsupp.linearCombination _ (fun h : ↥(G.erase g₀) => (h : MvPolynomial σ k)) q + r) ∧
+        (∀ c ∈ r.support, ∀ h : ↥(G.erase g₀), ¬ m.degree (h : MvPolynomial σ k) ≤ c) ∧
+        m.degree r = m.degree g₀ ∧
+        m.Monic r } :=
+    fun g₀ hg₀ => by
+      have hbg₀ne : ∀ h : ↥(G.erase g₀), (h : MvPolynomial σ k) ≠ 0 :=
+        fun ⟨h, hh⟩ => (hGmonic h (Finset.mem_of_mem_erase hh)).ne_zero
+      suffices hexists : ∃ r : MvPolynomial σ k,
+          (∃ q : ↥(G.erase g₀) →₀ MvPolynomial σ k,
+            g₀ = Finsupp.linearCombination _ (fun h : ↥(G.erase g₀) => (h : MvPolynomial σ k)) q + r) ∧
+          (∀ c ∈ r.support, ∀ h : ↥(G.erase g₀), ¬ m.degree (h : MvPolynomial σ k) ≤ c) ∧
+          m.degree r = m.degree g₀ ∧
+          m.Monic r from ⟨Classical.choose hexists, Classical.choose_spec hexists⟩
+      obtain ⟨q, r, hdecomp, hdegbound, hrsupp⟩ :=
+        m.div (fun h : ↥(G.erase g₀) => m.isUnit_leadingCoeff.mpr (hbg₀ne ⟨h, h.2⟩)) g₀
+      -- Show m.degree r = m.degree g₀ and r ≠ 0
+      have hg₀monic : m.Monic g₀ := hGmonic g₀ hg₀
+      have hg₀ne : g₀ ≠ 0 := hg₀monic.ne_zero
+      -- g₀.coeff(m.degree g₀) = 1 (monic)
+      have hcoeff_g₀ : g₀.coeff (m.degree g₀) = 1 := hg₀monic.coeff_degree
+      -- Each (b h * q h).coeff(m.degree g₀) = 0 by minimality
+      have hcoeff_terms : ∀ h : ↥(G.erase g₀),
+          ((h : MvPolynomial σ k) * q h).coeff (m.degree g₀) = 0 := by
+        intro ⟨h, hh⟩
+        have hhG : h ∈ G := Finset.mem_of_mem_erase hh
+        have hhne : h ≠ g₀ := (Finset.mem_erase.mp hh).1
+        by_cases hqh : q ⟨h, hh⟩ = 0
+        · simp [hqh]
+        by_cases hh0 : h = 0
+        · simp [hh0]
+        by_contra hne0
+        have hprod_ne : h * q ⟨h, hh⟩ ≠ 0 := by
+          intro hpz; simp [hpz] at hne0
+        have hdeg_prod : m.toSyn (m.degree (h * q ⟨h, hh⟩)) ≤ m.toSyn (m.degree g₀) := by
+          have := hdegbound ⟨h, hh⟩
+          simp only at this
+          exact this
+        have hmem_supp : m.degree g₀ ∈ (h * q ⟨h, hh⟩).support :=
+          mem_support_iff.mpr hne0
+        have hle : m.toSyn (m.degree g₀) ≤ m.toSyn (m.degree (h * q ⟨h, hh⟩)) :=
+          m.le_degree hmem_supp
+        have hdeg_eq : m.degree (h * q ⟨h, hh⟩) = m.degree g₀ :=
+          m.toSyn.injective (le_antisymm hdeg_prod hle)
+        have hhq_ne : q ⟨h, hh⟩ ≠ 0 := hqh
+        have hdeg_h_le : m.degree h ≤ m.degree g₀ := by
+          rw [← hdeg_eq]
+          have := m.degree_mul hh0 hhq_ne
+          rw [this]
+          rw [Finsupp.le_def]; intro i; simp only [Finsupp.add_apply]; exact Nat.le_add_right _ _
+        exact hGmin g₀ hg₀ h hhG (Ne.symm hhne) hdeg_h_le
+      -- r.coeff(m.degree g₀) = 1 (from g₀ monic and remainder coefficient formula)
+      have hr_coeff : r.coeff (m.degree g₀) = 1 := by
+        have heq : g₀.coeff (m.degree g₀) =
+            (Finsupp.linearCombination _ (fun h : ↥(G.erase g₀) => (h : MvPolynomial σ k)) q +
+              r).coeff (m.degree g₀) := by
+          rw [← hdecomp]
+        rw [coeff_add, Finsupp.linearCombination, Finsupp.lsum_apply, Finsupp.sum] at heq
+        simp only [LinearMap.smulRight_apply, LinearMap.id_coe, id, map_sum,
+                   MvPolynomial.coeff_sum] at heq
+        rw [hcoeff_g₀] at heq
+        have hterms_zero : (∑ x ∈ q.support,
+            (q x • (x : MvPolynomial σ k)).coeff (m.degree g₀)) = 0 := by
+          apply Finset.sum_eq_zero
+          intro ⟨h, hh⟩ _
+          rw [smul_eq_mul, mul_comm]
+          exact hcoeff_terms ⟨h, hh⟩
+        rw [hterms_zero, zero_add] at heq
+        exact heq.symm
+      have hr_deg : m.degree r = m.degree g₀ := by
+        apply m.toSyn.injective
+        apply le_antisymm
+        · -- toSyn(deg r) ≤ toSyn(deg g₀): from decomposition, all support of r is ≤ deg g₀
+          by_contra h
+          push_neg at h
+          have hr_ne' : r ≠ 0 := by intro hr0; simp [hr0] at hr_coeff
+          have hmr_supp : m.degree r ∈ r.support := m.degree_mem_support hr_ne'
+          have hr_ne_coeff : r.coeff (m.degree r) ≠ 0 := mem_support_iff.mp hmr_supp
+          have hg₀_zero : g₀.coeff (m.degree r) = 0 := by
+            by_contra hc
+            exact absurd (m.le_degree (mem_support_iff.mpr hc)) (not_le.mpr h)
+          have hsum_zero :
+              (Finsupp.linearCombination _ (fun i : ↥(G.erase g₀) => (i : MvPolynomial σ k)) q).coeff
+                (m.degree r) = 0 := by
+            simp only [Finsupp.linearCombination, Finsupp.lsum_apply, Finsupp.sum,
+                       LinearMap.smulRight_apply, LinearMap.id_coe, id, map_sum, MvPolynomial.coeff_sum]
+            apply Finset.sum_eq_zero
+            intro ⟨hi, hhi⟩ _
+            by_contra hc
+            rw [smul_eq_mul, mul_comm] at hc
+            exact absurd h (not_lt.mpr
+              ((m.le_degree (mem_support_iff.mpr hc)).trans (hdegbound ⟨hi, hhi⟩)))
+          have key := congr_arg (MvPolynomial.coeff (m.degree r)) hdecomp
+          rw [coeff_add, hg₀_zero, hsum_zero, zero_add] at key
+          exact hr_ne_coeff key.symm
+        · exact m.le_degree (mem_support_iff.mpr (hr_coeff ▸ one_ne_zero))
+      have hr_monic : m.Monic r := by
+        simp only [MonomialOrder.Monic, MonomialOrder.leadingCoeff, hr_deg]
+        exact hr_coeff
+      exact ⟨r, ⟨⟨q, hdecomp⟩, hrsupp, hr_deg, hr_monic⟩⟩
+  -- Define G' = image of G under the remainder function
+  let G' : Finset (MvPolynomial σ k) := G.image (fun g => if hg : g ∈ G then (rg g hg).val else g)
+  refine ⟨G', ?_⟩
+  -- Show G' is a reduced Gröbner basis
+  constructor
+  · -- IsGroebnerBasis I G'
+    constructor
+    · -- Each element of G' is in I
+      intro g' hg'
+      simp only [G', Finset.mem_image] at hg'
+      obtain ⟨g, hg, rfl⟩ := hg'
+      simp only [dif_pos hg]
+      -- r is a remainder of g divided by G \ {g}
+      -- g = ∑ q h * h + r, each h ∈ G ⊆ I, so r ∈ I
+      obtain ⟨⟨q, hdecomp⟩, _, _, _⟩ := (rg g hg).2
+      have hG_le : Ideal.span ((G.erase g : Set (MvPolynomial σ k))) ≤ I := by
+        apply Ideal.span_le.mpr
+        intro h hh
+        exact hGbasis.1 h (Finset.mem_of_mem_erase (Finset.mem_coe.mp hh))
+      have hsum_I : Finsupp.linearCombination _
+          (fun h : ↥(G.erase g) => (h : MvPolynomial σ k)) q ∈ I := hG_le (by
+        simp only [Finsupp.linearCombination, Finsupp.lsum_apply, Finsupp.sum,
+                   LinearMap.smulRight_apply, LinearMap.id_coe, id]
+        exact sum_mem (fun ⟨h, hh⟩ _ =>
+          Ideal.mul_mem_left _ _ (Ideal.subset_span (Finset.mem_coe.mpr hh))))
+      have : (rg g hg).val = g - Finsupp.linearCombination _
+          (fun h : ↥(G.erase g) => (h : MvPolynomial σ k)) q := by
+        linear_combination -hdecomp
+      rw [this]
+      exact I.sub_mem (hGbasis.1 g hg) hsum_I
+    · -- initialIdeal I = span(lterms of G')
+      rw [hGbasis.2, span_leadingTerm_eq_span_leadingMonomial,
+          span_leadingTerm_eq_span_leadingMonomial]
+      congr 1; congr 1
+      ext s
+      simp only [Set.mem_image, Set.mem_diff, Set.mem_singleton_iff, Finset.mem_coe]
+      constructor
+      · rintro ⟨g, ⟨hgG, hgne⟩, hdeg⟩
+        obtain ⟨-, -, hdeg', hmonic'⟩ := (rg g hgG).2
+        refine ⟨_, ⟨?_, hmonic'.ne_zero⟩, hdeg'.trans hdeg⟩
+        exact Finset.mem_image.mpr ⟨g, hgG, dif_pos hgG⟩
+      · rintro ⟨g', ⟨hg'G', hg'ne⟩, hdeg'⟩
+        simp only [G', Finset.mem_image] at hg'G'
+        obtain ⟨g, hgG, rfl⟩ := hg'G'
+        simp only [dif_pos hgG] at hdeg' hg'ne
+        obtain ⟨-, -, hdeg, -⟩ := (rg g hgG).2
+        exact ⟨g, ⟨hgG, (hGmonic g hgG).ne_zero⟩, hdeg.symm.trans hdeg'⟩
+  · constructor
+    · -- Monic
+      intro g' hg'
+      simp only [G', Finset.mem_image] at hg'
+      obtain ⟨g, hg, rfl⟩ := hg'
+      simp only [dif_pos hg]
+      obtain ⟨-, -, -, hmonic⟩ := (rg g hg).2
+      exact hmonic
+    · -- Reduced: no monomial of r(g) is divisible by LM of any g' ∈ G' with g' ≠ r(g)
+      intro g' hg'mem c hc g'' hg''mem hne
+      simp only [G', Finset.mem_image] at hg'mem hg''mem
+      obtain ⟨g, hg, rfl⟩ := hg'mem
+      obtain ⟨g₀, hg₀, rfl⟩ := hg''mem
+      simp only [dif_pos hg, dif_pos hg₀] at hc hne ⊢
+      obtain ⟨-, hrsupp, hdeg, -⟩ := (rg g hg).2
+      obtain ⟨-, -, hdeg₀, hne₀⟩ := (rg g₀ hg₀).2
+      rw [hdeg₀]
+      have hgg₀ : g ≠ g₀ := by
+        intro heq
+        cases heq
+        exact hne (congrArg (·.val) (congrArg (rg g) (Subsingleton.elim hg hg₀)))
+      have hg₀_erase : g₀ ∈ G.erase g := Finset.mem_erase.mpr ⟨hgg₀.symm, hg₀⟩
+      exact hrsupp c hc ⟨g₀, hg₀_erase⟩
 
 /-- **Existence of a reduced Gröbner basis** for every nonzero ideal. -/
 private lemma rgb_exists [Finite σ] (I : Ideal (MvPolynomial σ k)) (hI : I ≠ ⊥) :
