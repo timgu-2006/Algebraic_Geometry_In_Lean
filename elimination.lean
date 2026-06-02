@@ -83,7 +83,6 @@ theorem projection_image_subset_eliminationLocus
   have heval : MvPolynomial.aeval v (MvPolynomial.rename (Fin.natAdd n) f) = 0 :=
     mem_zeroLocus_iff.mp hv _ hf
   rw [MvPolynomial.aeval_rename] at heval
-  simp only [projection, Function.comp]
   exact heval
 
 -- ---------------------------------------------------------------------------
@@ -195,15 +194,15 @@ theorem joinVarieties_one (V : Set (Fin n → k)) :
   · rintro ⟨pts, hpts, t, ht, rfl⟩
     have ht0 : t 0 = 1 := by
       have := ht
-      simp only [standardSimplex, Set.mem_setOf_eq, Fin.sum_univ_one] at this
-      exact this
+      simp only [standardSimplex, Set.mem_setOf_eq] at this
+      simpa using this
     have heq : affineCombination 1 pts t = pts 0 := by
-      ext j; simp [affineCombination, Fin.sum_univ_one, ht0]
+      ext j; simp [affineCombination, ht0]
     rw [heq]; exact hpts 0
   · intro hv
     refine ⟨fun _ => v, fun _ => hv, fun _ => 1, ?_, ?_⟩
-    · simp [standardSimplex, Fin.sum_univ_one]
-    · ext j; simp [affineCombination, Fin.sum_univ_one]
+    · simp [standardSimplex]
+    · ext j; simp [affineCombination]
 
 -- V is contained in its first secant variety.
 theorem subset_secantVariety_one (V : Set (Fin n → k)) :
@@ -212,8 +211,8 @@ theorem subset_secantVariety_one (V : Set (Fin n → k)) :
   apply subset_closure
   simp only [Set.mem_iUnion, Set.mem_singleton_iff]
   refine ⟨fun _ => v, fun _ => hv, fun _ => 1, ?_, ?_⟩
-  · simp [standardSimplex, Fin.sum_univ_one]
-  · ext j; simp [affineCombination, Fin.sum_univ_one]
+  · simp [standardSimplex]
+  · ext j; simp [affineCombination]
 
 -- V is contained in Sec_N(V) for any N ≥ 1.
 theorem subset_secantVariety (N : ℕ) (hN : 0 < N) (V : Set (Fin n → k)) :
@@ -224,11 +223,12 @@ theorem subset_secantVariety (N : ℕ) (hN : 0 < N) (V : Set (Fin n → k)) :
   refine ⟨fun _ => v, fun _ => hv,
           fun i => if i = ⟨0, hN⟩ then 1 else 0, ?_, ?_⟩
   · simp only [standardSimplex, Set.mem_setOf_eq]
-    rw [Finset.sum_ite_eq']
     simp
   · ext j
     simp only [affineCombination]
-    rw [Finset.sum_ite_eq']
+    rw [show ∑ i : Fin N, (if i = ⟨0, hN⟩ then (1 : k) else 0) * v j =
+          (∑ i : Fin N, if i = ⟨0, hN⟩ then (1 : k) else 0) * v j from
+      (Finset.sum_mul ..).symm]
     simp
 
 end SecantVarieties
