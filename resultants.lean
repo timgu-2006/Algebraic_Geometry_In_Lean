@@ -313,6 +313,150 @@ theorem det_smul_mem_range_mulVec {n : ℕ} (M : Matrix (Fin n) (Fin n) R) (v : 
     M.det • v ∈ Set.range (M.mulVec) :=
   ⟨M.cramer v, M.mulVec_cramer v⟩
 
+-- Helper: coefficient of ∑_{k : Fin mn} C(v k) * X^{mn-1-k} at position e
+-- equals v[mn-1-e] when e < mn, else 0.
+private lemma descPolyCoeff {R : Type*} [CommRing R] (mn : ℕ) (v : Fin mn → R) (e : ℕ) :
+    (∑ k : Fin mn, Polynomial.C (v k) * Polynomial.X ^ (mn - 1 - (k : ℕ))).coeff e =
+    if h : e < mn then v ⟨mn - 1 - e, by omega⟩ else 0 := by
+  simp only [Polynomial.finset_sum_coeff, Polynomial.coeff_C_mul_X_pow]
+  -- Sum = ∑_k (if e = mn-1-k then v k else 0)
+  -- Rewrite the condition: e = mn-1-k iff k = ⟨mn-1-e, _⟩ (when e < mn).
+  split_ifs with he
+  · -- e < mn: exactly one k (namely ⟨mn-1-e, _⟩) satisfies e = mn-1-k.
+    -- Rewrite condition e = mn-1-k as ⟨mn-1-e,_⟩ = k, then use sum_ite_eq'.
+    have heq : ∀ k : Fin mn,
+        (e = mn - 1 - (k : ℕ)) ↔ ((⟨mn - 1 - e, by omega⟩ : Fin mn) = k) :=
+      fun k => ⟨fun h => Fin.ext (by simp only [Fin.val_mk]; omega),
+               fun h => by have := congr_arg Fin.val h; simp only [Fin.val_mk] at this; omega⟩
+    simp_rw [heq]
+    -- Now: ∑ k, (if ⟨mn-1-e,_⟩ = k then v k else 0) = v ⟨mn-1-e,_⟩
+    rw [Finset.sum_ite_eq, if_pos (Finset.mem_univ _)]
+  · -- e ≥ mn: no k in Fin mn satisfies mn-1-k = e
+    apply Finset.sum_eq_zero
+    intro k _
+    rw [if_neg]
+    omega
+
+-- Key row identity for f-rows of the Sylvester matrix (descending polynomial = X^{n-1-j} * f).
+-- Requires that f.coeff d = 0 for d > m (i.e., natDegree f ≤ m).
+private lemma sylvester_f_row_desc {R : Type*} [CommRing R] (m n : ℕ) (hn : 0 < n)
+    (f g : Polynomial R) (hf : ∀ d, m < d → f.coeff d = 0)
+    (j : Fin (m + n)) (hj : (j : ℕ) < n) :
+    ∑ k : Fin (m + n), Polynomial.C (sylvesterMatrix m n f g j k) *
+      Polynomial.X ^ (m + n - 1 - (k : ℕ)) =
+    Polynomial.X ^ (n - 1 - (j : ℕ)) * f := by
+  apply Polynomial.ext; intro e
+  rw [descPolyCoeff]
+  split_ifs with he
+  · -- Compute: sylvesterMatrix j ⟨m+n-1-e, _⟩
+    simp only [sylvesterMatrix, hj, ↓reduceIte]
+    -- Check Sylvester condition: j ≤ m+n-1-e ≤ j+m?
+    rw [Polynomial.coeff_X_pow_mul']
+    by_cases h1 : n - 1 - (j : ℕ) ≤ e
+    · -- n-1-j ≤ e: upper Sylvester condition (m+n-1-e ≤ j+m) holds
+      rw [if_pos h1]
+      by_cases h2 : (j : ℕ) ≤ m + n - 1 - e
+      · -- Lower condition holds too: full match
+        have hcond : (j : ℕ) ≤ m + n - 1 - e ∧ m + n - 1 - e ≤ (j : ℕ) + m := ⟨h2, by omega⟩
+        rw [if_pos hcond]
+        -- Goal: f.coeff(j+m-(m+n-1-e)) = f.coeff(e-(n-1-j))
+        -- Both sides equal j + e - (n-1) in ℤ. Use zify.
+        have heq : (j : ℕ) + m - (m + n - 1 - e) = e - (n - 1 - (j : ℕ)) := by
+          have hjn : (j : ℕ) < n := hj
+          have h2' : m + n - 1 - e ≤ m + (j : ℕ) := by omega
+          zify [h2, h2', h1, hjn.le]
+          omega
+        rw [heq]
+      · -- Lower condition fails: j > m+n-1-e, so Sylvester = 0
+        push Not at h2
+        have hnotcond : ¬ ((j : ℕ) ≤ m + n - 1 - e ∧ m + n - 1 - e ≤ (j : ℕ) + m) := by
+          push Not; intro h; omega
+        rw [if_neg hnotcond]
+        -- f.coeff(e-(n-1-j)) = 0 since j > m+n-1-e implies e+j ≥ m+n implies e-(n-1-j) > m
+        refine (hf _ ?_).symm
+        have hjn : (j : ℕ) < n := hj
+        have h1' : n - 1 - (j : ℕ) ≤ e := h1
+        have hn1j : n - 1 - (j : ℕ) + (j : ℕ) = n - 1 := by omega
+        -- h2 : m+n-1-e < j (after push Not)
+        -- hsum : m+n ≤ j+e (from h2 : m+n-1-e < j and he : e < m+n)
+        have hsum : m + n ≤ (j : ℕ) + e := by
+          have he' : e ≤ m + n - 1 := by omega
+          zify [he'] at h2 ⊢; omega
+        omega
+    · -- n-1-j > e: Sylvester condition fails (upper: m+n-1-e > j+m), RHS = 0
+      push Not at h1  -- h1 : e < n-1-j
+      rw [if_neg (by omega : ¬(n - 1 - (j : ℕ) ≤ e))]
+      have hnotcond : ¬ ((j : ℕ) ≤ m + n - 1 - e ∧ m + n - 1 - e ≤ (j : ℕ) + m) := by
+        have hjn : (j : ℕ) < n := hj
+        rintro ⟨_, h⟩; zify [hjn.le] at *; omega
+      rw [if_neg hnotcond]
+  · -- e ≥ m+n: both sides are 0 (both LHS and RHS).
+    -- LHS: descPolyCoeff gives 0 (since ¬(e < m+n)).
+    -- RHS: (X^{n-1-j} * f).coeff e: n-1-j ≤ e (since n-1-j < n ≤ m+n ≤ e).
+    --      So coeff = f.coeff(e-(n-1-j)) = 0 since e-(n-1-j) ≥ m+1 > m.
+    rw [Polynomial.coeff_X_pow_mul']
+    -- n-1-j ≤ n-1 < n ≤ m+n ≤ e, so condition n-1-j ≤ e holds.
+    have h1 : n - 1 - (j : ℕ) ≤ e := by omega
+    rw [if_pos h1]
+    -- f.coeff(e-(n-1-j)) = 0 since e-(n-1-j) ≥ m+n-n+1 = m+1 > m
+    symm; apply hf; zify [h1, hj.le] at *; omega
+
+-- Key row identity for g-rows of the Sylvester matrix.
+-- Requires that g.coeff d = 0 for d > n.
+private lemma sylvester_g_row_desc {R : Type*} [CommRing R] (m n : ℕ) (hm : 0 < m)
+    (f g : Polynomial R) (hg : ∀ d, n < d → g.coeff d = 0)
+    (s : Fin m) :
+    ∑ k : Fin (m + n), Polynomial.C (sylvesterMatrix m n f g ⟨n + (s : ℕ), by omega⟩ k) *
+      Polynomial.X ^ (m + n - 1 - (k : ℕ)) =
+    Polynomial.X ^ (m - 1 - (s : ℕ)) * g := by
+  apply Polynomial.ext; intro e
+  rw [descPolyCoeff]
+  split_ifs with he
+  · simp only [sylvesterMatrix]
+    -- Evaluate the row selector: n+s ≥ n, so we take the g-row branch.
+    have hge : ¬ (n + (s : ℕ) < n) := by omega
+    rw [if_neg hge]
+    -- Simplify n+s-n = s in the column condition.
+    rw [show n + (s : ℕ) - n = (s : ℕ) from Nat.add_sub_cancel_left n s]
+    -- Now goal: (if (s:ℕ) ≤ m+n-1-e ∧ m+n-1-e ≤ n+(s:ℕ) then g.coeff(n+(s:ℕ)-(m+n-1-e)) else 0)
+    --         = (X^{m-1-s} * g).coeff e
+    rw [Polynomial.coeff_X_pow_mul']
+    by_cases h1 : m - 1 - (s : ℕ) ≤ e
+    · rw [if_pos h1]
+      -- When m-1-s ≤ e, the upper condition always holds: m+n-1-e ≤ n+s.
+      have hs_le : (s : ℕ) ≤ m - 1 := by omega
+      have h_hi : m + n - 1 - e ≤ n + (s : ℕ) := by zify [h1, hs_le]; omega
+      -- Case split on lower condition: s ≤ m+n-1-e?
+      by_cases h_lo : (s : ℕ) ≤ m + n - 1 - e
+      · -- Both conditions hold: Sylvester = g.coeff(n+s-(m+n-1-e)) = g.coeff(e-(m-1-s))
+        rw [if_pos (show (s : ℕ) ≤ m + n - 1 - e ∧ m + n - 1 - e ≤ n + (s : ℕ) from ⟨h_lo, h_hi⟩)]
+        have heq : n + (s : ℕ) - (m + n - 1 - e) = e - (m - 1 - (s : ℕ)) := by
+          zify [h_lo, h1, hs_le]; omega
+        rw [heq]
+      · -- Lower fails (s > m+n-1-e): Sylvester = 0 and g.coeff(e-(m-1-s)) = 0
+        rw [if_neg (show ¬((s : ℕ) ≤ m + n - 1 - e ∧ m + n - 1 - e ≤ n + (s : ℕ)) from by
+          rintro ⟨h, _⟩; exact h_lo h)]
+        -- e-(m-1-s) > n: s > m+n-1-e means s+e > m+n-1 means e-m+1+s > n
+        symm
+        apply hg
+        push Not at h_lo
+        zify [h1, hs_le] at *; omega
+    · -- h1 : ¬(m - 1 - ↑s ≤ e), i.e. e < m - 1 - ↑s
+      push Not at h1  -- h1 : e < m - 1 - ↑s
+      rw [if_neg (by omega : ¬(m - 1 - (s : ℕ) ≤ e))]
+      -- Upper condition fails: m+n-1-e > n+s (since m-1 > s+e)
+      have hs_le : (s : ℕ) ≤ m - 1 := by omega
+      rw [if_neg (show ¬((s : ℕ) ≤ m + n - 1 - e ∧ m + n - 1 - e ≤ n + (s : ℕ)) from by
+        rintro ⟨_, h⟩; zify [hs_le] at *; omega)]
+  · rw [Polynomial.coeff_X_pow_mul']
+    -- e ≥ m+n: m-1-s ≤ m-1 < m ≤ m+n ≤ e, so m-1-s ≤ e holds.
+    have hs_lt : (s : ℕ) < m := s.isLt
+    have hs_le : (s : ℕ) ≤ m - 1 := by omega
+    have h1 : m - 1 - (s : ℕ) ≤ e := by omega
+    rw [if_pos h1]
+    symm; apply hg
+    zify [h1, hs_le] at *; omega
+
 /-- Res(f,g) · 1 ∈ ⟨f,g⟩ ⊆ S[x] (the easy direction of Theorem 5.13). -/
 theorem resultant_C_mem_span (m n : ℕ) (hm : 0 < m) (hn : 0 < n) :
     let S := MvPolynomial (Fin (m + 1) ⊕ Fin (n + 1)) k
@@ -321,7 +465,153 @@ theorem resultant_C_mem_span (m n : ℕ) (hm : 0 < m) (hn : 0 < n) :
     let g : Polynomial S := ∑ j : Fin (n+1),
       Polynomial.C (X (Sum.inr j)) * Polynomial.X ^ (j : ℕ)
     Polynomial.C (resultant m n f g) ∈ (span {f, g} : Ideal (Polynomial S)) := by
-  sorry
+  -- Strategy: exhibit Bezout multipliers A and B from the last row of adj(M).
+  -- A * f + B * g = C(Res) follows from:
+  --   ∑_j adj[last,j] * (row_desc j) = C(Res)
+  -- where row_desc j = ∑_k C(M[j,k]) * X^{m+n-1-k} = X^{n-1-j}*f or X^{m-1-(j-n)}*g.
+  intro S f g
+  letI : CommRing S := inferInstance
+  letI : Semiring S := inferInstance
+  rw [Ideal.mem_span_pair]
+  set M := sylvesterMatrix m n f g with hM_def
+  have hmn : 0 < m + n := by omega
+  let last : Fin (m + n) := ⟨m + n - 1, by omega⟩
+  -- Multipliers from the last row of adj(M):
+  --   A = ∑_{j<n}   C(adj[last,j]) * X^{n-1-j}
+  --   B = ∑_{j=n}^{m+n-1} C(adj[last,j]) * X^{m-1-(j-n)}
+  refine ⟨
+    ∑ j : Fin (m + n), if (j : ℕ) < n then
+      Polynomial.C (M.adjugate last j) * Polynomial.X ^ (n - 1 - (j : ℕ))
+    else 0,
+    ∑ j : Fin (m + n), if n ≤ (j : ℕ) then
+      Polynomial.C (M.adjugate last j) * Polynomial.X ^ (m - 1 - ((j : ℕ) - n))
+    else 0,
+    ?_⟩
+  -- Prove A * f + B * g = C(Res).
+  -- Step 1: Replace X^{n-1-j}*f and X^{m-1-s}*g using the row identities (helper lemmas).
+  -- This gives A*f = ∑_j<n C(adj[last,j]) * ∑_k C(M[j,k]) * X^{m+n-1-k}
+  --            B*g = ∑_j≥n C(adj[last,j]) * ∑_k C(M[j,k]) * X^{m+n-1-k}
+  -- Step 2: Combine and swap sums:
+  --   A*f + B*g = ∑_j C(adj[last,j]) * ∑_k C(M[j,k])*X^{m+n-1-k}
+  --             = ∑_k (∑_j adj[last,j] * M[j,k]) * X^{m+n-1-k}    (C-linear)
+  --             = ∑_k (adj*M)[last,k] * X^{m+n-1-k}                (matrix mult)
+  --             = ∑_k Res * δ(last=k) * X^{m+n-1-k}                (adjugate_mul)
+  --             = Res * X^0 = C(Res).
+  --
+  -- Prove degree bounds: f.coeff d = 0 for d > m, and g.coeff d = 0 for d > n.
+  -- These follow from the explicit form of f and g.
+  have hf_deg : ∀ d, m < d → f.coeff d = 0 := by
+    intro d hd
+    simp only [f, Polynomial.finset_sum_coeff, Polynomial.coeff_C_mul, Polynomial.coeff_X_pow]
+    apply Finset.sum_eq_zero
+    intro i _
+    simp only [mul_ite, mul_one, mul_zero, ite_eq_right_iff]
+    intro heq
+    have := i.isLt; omega
+  have hg_deg : ∀ d, n < d → g.coeff d = 0 := by
+    intro d hd
+    simp only [g, Polynomial.finset_sum_coeff, Polynomial.coeff_C_mul, Polynomial.coeff_X_pow]
+    apply Finset.sum_eq_zero
+    intro i _
+    simp only [mul_ite, mul_one, mul_zero, ite_eq_right_iff]
+    intro heq
+    have := i.isLt; omega
+  -- Row identity helpers.
+  have row_f : ∀ j : Fin (m + n), (j : ℕ) < n →
+      Polynomial.X ^ (n - 1 - (j : ℕ)) * f =
+      ∑ k : Fin (m + n), Polynomial.C (M j k) * Polynomial.X ^ (m + n - 1 - (k : ℕ)) := by
+    intro j hj
+    rw [hM_def]
+    exact (sylvester_f_row_desc (R := S) m n hn f g hf_deg j hj).symm
+  have row_g : ∀ s : Fin m,
+      Polynomial.X ^ (m - 1 - (s : ℕ)) * g =
+      ∑ k : Fin (m + n), Polynomial.C (M ⟨n + (s : ℕ), by omega⟩ k) *
+        Polynomial.X ^ (m + n - 1 - (k : ℕ)) := by
+    intro s
+    rw [hM_def]
+    exact (sylvester_g_row_desc (R := S) m n hm f g hg_deg s).symm
+  -- Now compute A * f + B * g.
+  -- First, rewrite A * f using row_f.
+  have hAf : (∑ j : Fin (m + n), if (j : ℕ) < n then
+        Polynomial.C (M.adjugate last j) * Polynomial.X ^ (n - 1 - (j : ℕ))
+      else 0) * f =
+      ∑ j : Fin (m + n), if (j : ℕ) < n then
+        Polynomial.C (M.adjugate last j) *
+          ∑ k : Fin (m + n), Polynomial.C (M j k) * Polynomial.X ^ (m + n - 1 - (k : ℕ))
+      else 0 := by
+    rw [Finset.sum_mul]
+    congr 1; ext j
+    split_ifs with hj
+    · rw [mul_assoc, row_f j hj]
+    · simp
+  -- Second, rewrite B * g using row_g.
+  have hBg : (∑ j : Fin (m + n), if n ≤ (j : ℕ) then
+        Polynomial.C (M.adjugate last j) * Polynomial.X ^ (m - 1 - ((j : ℕ) - n))
+      else 0) * g =
+      ∑ j : Fin (m + n), if n ≤ (j : ℕ) then
+        Polynomial.C (M.adjugate last j) *
+          ∑ k : Fin (m + n), Polynomial.C (M j k) * Polynomial.X ^ (m + n - 1 - (k : ℕ))
+      else 0 := by
+    rw [Finset.sum_mul]
+    congr 1; ext j
+    split_ifs with hj
+    · -- j ≥ n, let s = j - n : Fin m
+      have hs_lt : (j : ℕ) - n < m := by omega
+      let s : Fin m := ⟨(j : ℕ) - n, hs_lt⟩
+      have hj_eq : j = ⟨n + (s : ℕ), by omega⟩ := by ext; simp [s]; omega
+      rw [mul_assoc]
+      -- X^{m-1-(j-n)} * g = X^{m-1-s} * g = row_g s (with M j = M ⟨n+s,_⟩ from hj_eq)
+      have hexpeq : m - 1 - ((j : ℕ) - n) = m - 1 - (s : ℕ) := rfl
+      have hrow : Polynomial.X ^ (m - 1 - (s : ℕ)) * g =
+          ∑ k : Fin (m + n), Polynomial.C (M j k) * Polynomial.X ^ (m + n - 1 - (k : ℕ)) := by
+        rw [row_g s]; congr 1; ext k; simp only [hj_eq]
+      rw [hexpeq, hrow]
+    · simp
+  rw [hAf, hBg]
+  -- Now combine: (∑_j if j<n then ... else 0) + (∑_j if n≤j then ... else 0)
+  --           = ∑_j C(adj[last,j]) * ∑_k C(M[j,k]) * X^{m+n-1-k}
+  have hcombine : (∑ j : Fin (m + n), if (j : ℕ) < n then
+            Polynomial.C (M.adjugate last j) *
+              ∑ k : Fin (m + n), Polynomial.C (M j k) * Polynomial.X ^ (m + n - 1 - (k : ℕ))
+          else 0) +
+        (∑ j : Fin (m + n), if n ≤ (j : ℕ) then
+            Polynomial.C (M.adjugate last j) *
+              ∑ k : Fin (m + n), Polynomial.C (M j k) * Polynomial.X ^ (m + n - 1 - (k : ℕ))
+          else 0) =
+      ∑ j : Fin (m + n), Polynomial.C (M.adjugate last j) *
+        ∑ k : Fin (m + n), Polynomial.C (M j k) * Polynomial.X ^ (m + n - 1 - (k : ℕ)) := by
+    rw [← Finset.sum_add_distrib]
+    congr 1; ext j
+    by_cases hj : (j : ℕ) < n
+    · simp [hj, show ¬ n ≤ (j : ℕ) from by omega]
+    · push Not at hj
+      simp [show ¬ (j : ℕ) < n from by omega, hj]
+  rw [hcombine]
+  -- Swap the two sums:
+  --   ∑_j C(adj[last,j]) * ∑_k C(M[j,k]) * X^{m+n-1-k}
+  -- = ∑_k (∑_j adj[last,j] * M[j,k]) * X^{m+n-1-k}
+  -- = ∑_k C((adj*M)[last,k]) * X^{m+n-1-k}
+  -- = ∑_k C(Res * δ(last=k)) * X^{m+n-1-k}
+  -- = C(Res) * X^{m+n-1-(m+n-1)} = C(Res) * 1 = C(Res)
+  simp_rw [Finset.mul_sum, ← mul_assoc, ← Polynomial.C_mul]
+  rw [Finset.sum_comm]
+  simp_rw [← Finset.sum_mul, ← map_sum, ← Matrix.mul_apply]
+  -- Now: ∑_k C((adj*M)[last, k]) * X^{m+n-1-k}
+  rw [Matrix.adjugate_mul]
+  -- (Res • 1)[last, k] = Res * δ(last = k)
+  simp_rw [Matrix.smul_apply, Matrix.one_apply, smul_eq_mul, mul_ite, mul_one, mul_zero]
+  -- ∑_k C(if last = k then Res else 0) * X^{m+n-1-k}
+  -- Simplify C(if ... then x else 0) = if ... then C(x) else 0
+  simp_rw [apply_ite Polynomial.C, map_zero]
+  -- Pull the if out of the product: (if last=k then C(Res) else 0) * X^... = if last=k then ... else 0
+  simp_rw [ite_mul, zero_mul]
+  -- Now: ∑_k (if last = k then C(Res)*X^{m+n-1-k} else 0) = C(Res)*X^{m+n-1-last}
+  rw [Finset.sum_ite_eq]
+  simp only [Finset.mem_univ, ↓reduceIte, last, Fin.val_mk]
+  -- X^{m+n-1-(m+n-1)} = X^0 = 1
+  simp only [Nat.sub_self, pow_zero, mul_one]
+  -- C(M.det) = C(resultant m n f g)
+  simp only [resultant, ← hM_def]
 
 end FieldResults
 
