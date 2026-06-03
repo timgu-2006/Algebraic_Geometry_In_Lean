@@ -17,6 +17,9 @@ lean_lib AffineVarieties where
 lean_lib Elimination where
   globs := #[`elimination]
 
+lean_lib Resultants where
+  globs := #[`resultants]
+
 @[default_target]
 lean_lib ProjectiveVarieties where
   globs := #[`projective_varieties]
