@@ -84,7 +84,12 @@ Conditions 3–4 are equivalent because k[x] is a PID.
     In k[x], `IsCoprime f g` iff `span {f, g} = ⊤`. -/
 theorem isCoprime_iff_span_eq_top (f g : Polynomial k) :
     IsCoprime f g ↔ (span {f, g} : Ideal (Polynomial k)) = ⊤ := by
-  sorry
+  rw [Ideal.eq_top_iff_one, Ideal.mem_span_pair]
+  constructor
+  · rintro ⟨a, b, h⟩
+    exact ⟨a, b, h⟩
+  · rintro ⟨a, b, h⟩
+    exact ⟨a, b, h⟩
 
 /-- Proposition 5.1: common root over an extension ↔ not coprime. -/
 theorem common_root_iff_not_isCoprime (f g : Polynomial k)
@@ -230,8 +235,8 @@ theorem elimination_ideal_eq_resultant_span (m n : ℕ) (hm : 0 < m) (hn : 0 < n
     Proof: M · (adj(M) · v) = (M · adj(M)) · v = det(M) · Id · v = det(M) · v,
     using the classical adjoint identity M · adj(M) = det(M) · Id. -/
 theorem det_smul_mem_range_mulVec {n : ℕ} (M : Matrix (Fin n) (Fin n) R) (v : Fin n → R) :
-    M.det • v ∈ Set.range (M.mulVec) := by
-  sorry
+    M.det • v ∈ Set.range (M.mulVec) :=
+  ⟨M.cramer v, M.mulVec_cramer v⟩
 
 /-- Res(f,g) · 1 ∈ ⟨f,g⟩ ⊆ S[x] (the easy direction of Theorem 5.13). -/
 theorem resultant_C_mem_span (m n : ℕ) (hm : 0 < m) (hn : 0 < n) :

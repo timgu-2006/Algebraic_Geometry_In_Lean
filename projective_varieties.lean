@@ -115,12 +115,35 @@ theorem IsHomogeneousIdeal.inf {n : ℕ} {I J : Ideal (MvPolynomial (Fin (n+1)) 
     IsHomogeneousIdeal (I ⊓ J) := fun f hf d =>
   Ideal.mem_inf.mpr ⟨hI f (Ideal.mem_inf.mp hf).1 d, hJ f (Ideal.mem_inf.mp hf).2 d⟩
 
+/-- Bridge: the project's `IsHomogeneousIdeal` is equivalent to Mathlib's graded-algebra
+  notion `Ideal.IsHomogeneous (homogeneousSubmodule ...)`. -/
+private theorem isHomogeneousIdeal_iff {n : ℕ} (I : Ideal (MvPolynomial (Fin (n+1)) k)) :
+    IsHomogeneousIdeal I ↔
+    letI := MvPolynomial.gradedAlgebra (σ := Fin (n+1)) (R := k)
+    Ideal.IsHomogeneous (MvPolynomial.homogeneousSubmodule (Fin (n+1)) k) I := by
+  letI := MvPolynomial.gradedAlgebra (σ := Fin (n+1)) (R := k)
+  -- With gradedAlgebra, (DirectSum.decompose (homogeneousSubmodule _) r i : _) = homogeneousComponent i r.
+  have heq : ∀ (r : MvPolynomial (Fin (n+1)) k) (i : ℕ),
+      (DirectSum.decompose (MvPolynomial.homogeneousSubmodule (Fin (n+1)) k) r i :
+        MvPolynomial (Fin (n+1)) k) = MvPolynomial.homogeneousComponent i r :=
+    fun r i => MvPolynomial.decomposition.decompose'_apply r i
+  -- Ideal.IsHomogeneous unfolds to SetLike.IsHomogeneous which unfolds to ∀ i m ∈ I, decompose m i ∈ I
+  unfold IsHomogeneousIdeal Ideal.IsHomogeneous Submodule.IsHomogeneous
+  constructor
+  · intro hI i m hm
+    rw [heq]
+    exact hI m hm i
+  · intro hI m hm i
+    have h := hI (i := i) hm
+    rw [heq] at h
+    exact h
+
 theorem IsHomogeneousIdeal.mul {n : ℕ} {I J : Ideal (MvPolynomial (Fin (n+1)) k)}
     (hI : IsHomogeneousIdeal I) (hJ : IsHomogeneousIdeal J) :
     IsHomogeneousIdeal (I * J) := by
-  intro f hf d
-  -- Homogeneous components of products: requires the Leibniz rule for homogeneous components.
-  sorry
+  letI := MvPolynomial.gradedAlgebra (σ := Fin (n+1)) (R := k)
+  rw [isHomogeneousIdeal_iff] at hI hJ ⊢
+  exact Ideal.IsHomogeneous.mul hI hJ
 
 end HomogeneousPolynomials
 
@@ -138,7 +161,7 @@ def projectiveZeroLocus (I : Ideal (MvPolynomial (Fin (n+1)) k)) : Set (Pn k n) 
 /-- `V_proj(0) = P^n(k)`. -/
 theorem projectiveZeroLocus_bot :
     projectiveZeroLocus (⊥ : Ideal (MvPolynomial (Fin (n+1)) k)) = Set.univ := by
-  ext p; simp [projectiveZeroLocus, Ideal.mem_bot]
+  ext p; simp [projectiveZeroLocus]
 
 /-- `V_proj(⊤) = ∅`. -/
 theorem projectiveZeroLocus_top :
@@ -233,14 +256,16 @@ noncomputable def zariskiTopologyPn (k : Type*) [Field k] (n : ℕ) : Topologica
       -- ⋂₀ A = V_proj(⨆ I_C)
       refine ⟨⨆ C : ↑A, I C, ?_, ?_⟩
       · -- Sup of homogeneous ideals is homogeneous
-        intro f hf d
-        -- f ∈ ⨆ I_C: use that ker(eval) ≥ each I_C, hence ≥ ⨆ I_C
-        -- The homogeneous components of f are in I_C for any C; we need a specific C.
-        sorry
+        letI := MvPolynomial.gradedAlgebra (σ := Fin (n+1)) (R := k)
+        rw [isHomogeneousIdeal_iff]
+        have hIhom' : ∀ C : ↑A, Ideal.IsHomogeneous
+            (MvPolynomial.homogeneousSubmodule (Fin (n+1)) k) (I C) :=
+          fun C => (isHomogeneousIdeal_iff (I C)).mp (hIhom C)
+        exact Ideal.IsHomogeneous.iSup hIhom'
       · -- ⋂₀ A = ⋂ C, V_proj(I_C) = V_proj(⨆ I_C) by iSup lemma
         rw [projectiveZeroLocus_iSup]
         ext x
-        simp only [Set.mem_sInter, Set.mem_iInter, Set.mem_setOf_eq]
+        simp only [Set.mem_sInter, Set.mem_iInter]
         constructor
         · intro hx ⟨C, hC⟩
           rw [← hIeq ⟨C, hC⟩]; exact hx C hC
@@ -265,11 +290,11 @@ theorem isClosed_projectiveHypersurface {d : ℕ} (f : MvPolynomial (Fin (n+1)) 
     (hf : f.IsHomogeneous d) :
     @IsClosed _ (zariskiTopologyPn k n) (projectiveZeroLocus (Ideal.span {f})) := by
   apply isClosed_projectiveZeroLocus
-  intro g hg e
-  rw [Ideal.mem_span_singleton] at hg
-  obtain ⟨c, rfl⟩ := hg
-  -- homogeneousComponent e (c * f) ∈ span {f}; requires product formula for hom. components
-  sorry
+  letI := MvPolynomial.gradedAlgebra (σ := Fin (n+1)) (R := k)
+  rw [isHomogeneousIdeal_iff]
+  apply Ideal.homogeneous_span
+  rintro x (rfl : x = f)
+  exact ⟨d, hf⟩
 
 end ZariskiTopologyPn
 
@@ -331,7 +356,7 @@ theorem homogenizeAt_affineCoord (i : Fin (n+1)) (p : standardAffineOpen i) :
   have hvec : Fin.insertNth i 1 (affineCoord (k := k) i p) = (p.1.rep i)⁻¹ • p.1.rep := by
     ext j
     induction j using Fin.succAboveCases i with
-    | x => simp [Fin.insertNth_apply_same, affineCoord, inv_mul_cancel₀ hvi]
+    | x => simp [Fin.insertNth_apply_same, inv_mul_cancel₀ hvi]
     | p j' => simp [Fin.insertNth_apply_succAbove, affineCoord, div_eq_mul_inv, mul_comm]
   -- mk k (insertNth 1 (affineCoord i p)) = mk k p.rep = p
   conv_rhs => rw [← Projectivization.mk_rep p.1]
@@ -354,11 +379,13 @@ noncomputable def dehomogenizeHom (i : Fin (n+1)) :
 
 /-- Dehomogenization: `Xᵢ ↦ 1`. -/
 theorem dehomogenizeHom_X_same (i : Fin (n+1)) :
-    dehomogenizeHom (k := k) i (MvPolynomial.X i) = 1 := sorry
+    dehomogenizeHom (k := k) i (MvPolynomial.X i) = 1 := by
+  simp [dehomogenizeHom, Fin.insertNth_apply_same]
 
 /-- Dehomogenization: `X_{succAbove i j} ↦ Xⱼ`. -/
 theorem dehomogenizeHom_X_succAbove (i : Fin (n+1)) (j : Fin n) :
-    dehomogenizeHom (k := k) i (MvPolynomial.X (i.succAbove j)) = MvPolynomial.X j := sorry
+    dehomogenizeHom (k := k) i (MvPolynomial.X (i.succAbove j)) = MvPolynomial.X j := by
+  simp [dehomogenizeHom, Fin.insertNth_apply_succAbove]
 
 /-- The affine zero locus of a dehomogenized ideal equals the affine chart of the
 projective zero locus (for a homogeneous ideal). -/
@@ -385,7 +412,11 @@ noncomputable def irrelevantIdeal (k : Type*) [Field k] (n : ℕ) :
 /-- The irrelevant ideal is homogeneous. -/
 theorem IsHomogeneousIdeal.irrelevant {n : ℕ} :
     IsHomogeneousIdeal (irrelevantIdeal k n) := by
-  sorry
+  letI := MvPolynomial.gradedAlgebra (σ := Fin (n+1)) (R := k)
+  rw [isHomogeneousIdeal_iff]
+  apply Ideal.homogeneous_span
+  rintro x ⟨i, rfl⟩
+  exact ⟨1, MvPolynomial.isHomogeneous_X k i⟩
 
 /-- **Projective Nullstellensatz** (Hassett Thm 7.16) — For algebraically closed `k`:
 `V_proj(I) = ∅ ↔ ∃ N, (𝔪+)^N ≤ I` (for `I` homogeneous, not ⊤). -/
