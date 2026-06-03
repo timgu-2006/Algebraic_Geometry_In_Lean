@@ -387,13 +387,88 @@ theorem dehomogenizeHom_X_succAbove (i : Fin (n+1)) (j : Fin n) :
     dehomogenizeHom (k := k) i (MvPolynomial.X (i.succAbove j)) = MvPolynomial.X j := by
   simp [dehomogenizeHom, Fin.insertNth_apply_succAbove]
 
+/-- Evaluating a dehomogenized polynomial at `u` equals evaluating the original at
+`Fin.insertNth i 1 u`. -/
+private lemma dehomogenize_eval_eq (i : Fin (n+1)) (u : Fin n → k)
+    (f : MvPolynomial (Fin (n+1)) k) :
+    MvPolynomial.eval u (dehomogenizeHom i f) =
+    MvPolynomial.eval (Fin.insertNth i 1 u) f := by
+  have key : ((MvPolynomial.aeval u).comp (dehomogenizeHom i) :
+      MvPolynomial (Fin (n+1)) k →ₐ[k] k) = MvPolynomial.aeval (Fin.insertNth i 1 u) := by
+    apply MvPolynomial.algHom_ext; intro j
+    simp only [AlgHom.comp_apply, dehomogenizeHom, MvPolynomial.aeval_X]
+    induction j using Fin.succAboveCases i with
+    | x => simp [Fin.insertNth_apply_same]
+    | p j' => simp [Fin.insertNth_apply_succAbove, MvPolynomial.aeval_X]
+  have := AlgHom.congr_fun key f
+  simp only [AlgHom.comp_apply, MvPolynomial.aeval_eq_eval] at this
+  exact this
+
+/-- For a homogeneous ideal `I`, evaluation vanishes at `r • v` whenever it vanishes at `v`. -/
+private lemma eval_smul_zero_of_homog {σ : Type*}
+    (I : Ideal (MvPolynomial σ k))
+    (hI : ∀ f ∈ I, ∀ d, MvPolynomial.homogeneousComponent d f ∈ I)
+    {v : σ → k} (hv : ∀ f ∈ I, MvPolynomial.eval v f = 0)
+    {f : MvPolynomial σ k} (hf : f ∈ I) (r : k) :
+    MvPolynomial.eval (r • v) f = 0 := by
+  rw [← MvPolynomial.sum_homogeneousComponent f]
+  simp only [map_sum]
+  apply Finset.sum_eq_zero; intro d _
+  rw [homogeneous_eval_smul (MvPolynomial.homogeneousComponent_isHomogeneous d f)]
+  exact mul_eq_zero_of_right _ (hv _ (hI f hf d))
+
 /-- The affine zero locus of a dehomogenized ideal equals the affine chart of the
 projective zero locus (for a homogeneous ideal). -/
 theorem proj_chart_eq_affine {I : Ideal (MvPolynomial (Fin (n+1)) k)}
     (hI : IsHomogeneousIdeal I) (i : Fin (n+1)) :
     affineCoord (k := k) i '' (Subtype.val ⁻¹' projectiveZeroLocus I : Set (standardAffineOpen i)) =
     MvPolynomial.zeroLocus k (I.map (dehomogenizeHom i).toRingHom) := by
-  sorry
+  ext u
+  simp only [Set.mem_image, Set.mem_preimage, MvPolynomial.mem_zeroLocus_iff,
+             MvPolynomial.aeval_eq_eval]
+  constructor
+  · -- LHS → RHS: given [p] ∈ projective zero locus with affineCoord = u, show u ∈ affine locus
+    rintro ⟨⟨p, hp⟩, hpI, rfl⟩ g hg
+    -- g ∈ I.map (dehomogenizeHom i); show eval (affineCoord i ⟨p,hp⟩) g = 0
+    -- Key: comap the kernel of eval (affineCoord i ...) back through dehomogenizeHom i
+    have hker : I.map (dehomogenizeHom i).toRingHom ≤
+        RingHom.ker (MvPolynomial.eval (affineCoord i ⟨p, hp⟩)) := by
+      rw [Ideal.map_le_iff_le_comap]
+      intro f hf
+      simp only [Ideal.mem_comap, RingHom.mem_ker]
+      show MvPolynomial.eval (affineCoord i ⟨p, hp⟩) (dehomogenizeHom i f) = 0
+      rw [dehomogenize_eval_eq]
+      -- insertNth i 1 (affineCoord i ⟨p,hp⟩) = (p.rep i)⁻¹ • p.rep
+      have hvec : Fin.insertNth i 1 (affineCoord i ⟨p, hp⟩) = (p.rep i)⁻¹ • p.rep := by
+        ext j; induction j using Fin.succAboveCases i with
+        | x => simp [Fin.insertNth_apply_same, inv_mul_cancel₀ hp]
+        | p j' => simp [Fin.insertNth_apply_succAbove, affineCoord, div_eq_mul_inv, mul_comm]
+      rw [hvec]
+      exact eval_smul_zero_of_homog I hI hpI hf _
+    exact RingHom.mem_ker.mp (hker hg)
+  · -- RHS → LHS: given u ∈ affine locus, lift to homogenizeAt i u ∈ projective locus
+    intro h
+    refine ⟨⟨homogenizeAt i u, homogenizeAt_mem i u⟩, ?_, affineCoord_homogenizeAt i u⟩
+    -- Show homogenizeAt i u ∈ projectiveZeroLocus I
+    intro f hf
+    obtain ⟨a, ha⟩ := exists_unit_smul_rep (Fin.insertNth i 1 u) (by
+      intro hh; have := congr_fun hh i; simp [Fin.insertNth_apply_same] at this)
+    -- rep = a • (insertNth i 1 u)
+    have hrep : (homogenizeAt i u).rep = a • (Fin.insertNth i 1 u : Fin (n+1) → k) := by
+      conv_lhs =>
+        rw [show homogenizeAt i u = Projectivization.mk k (Fin.insertNth i 1 u) _ from rfl]
+      exact ha.symm
+    rw [hrep]
+    -- Convert kˣ-smul to k-smul, then use scaling lemma
+    rw [show a • (Fin.insertNth i 1 u : Fin (n+1) → k) =
+        (a : k) • (Fin.insertNth i 1 u : Fin (n+1) → k) from by simp [Units.smul_def]]
+    apply eval_smul_zero_of_homog I hI _ hf
+    -- ∀ g ∈ I, eval (insertNth i 1 u) g = 0 follows from u ∈ affine locus
+    intro g hg
+    have hmem : (dehomogenizeHom i) g ∈ I.map (dehomogenizeHom i).toRingHom :=
+      Ideal.mem_map_of_mem _ hg
+    have := h _ hmem
+    rwa [dehomogenize_eval_eq] at this
 
 end AffineCharts
 
@@ -511,14 +586,64 @@ theorem isProjMorphism_id (V : Set (Pn k n)) :
                have := congr_fun h j; simp [MvPolynomial.eval_X] at this; exact this, ?_⟩
     simp only [MvPolynomial.eval_X, Projectivization.mk_rep]
 
+/-- Evaluating a polynomial obtained by substituting `fφ` into `fψl`
+equals evaluating `fψl` at the values `eval v (fφ j)`. -/
+private lemma eval_aeval_eq {p q : ℕ}
+    (fφ : Fin (q+1) → MvPolynomial (Fin (p+1)) k)
+    (fψl : MvPolynomial (Fin (q+1)) k) (v : Fin (p+1) → k) :
+    MvPolynomial.eval v (MvPolynomial.aeval fφ fψl) =
+    MvPolynomial.eval (fun j => MvPolynomial.eval v (fφ j)) fψl := by
+  have key : ((MvPolynomial.aeval v).comp (MvPolynomial.aeval fφ) :
+      MvPolynomial (Fin (q+1)) k →ₐ[k] k) =
+      MvPolynomial.aeval (fun j => MvPolynomial.eval v (fφ j)) := by
+    apply MvPolynomial.algHom_ext; intro j
+    simp [MvPolynomial.aeval_X, MvPolynomial.aeval_eq_eval]
+  exact_mod_cast AlgHom.congr_fun key fψl
+
 /-- Composition of morphisms is a morphism. -/
 theorem isProjMorphism_comp {p q : ℕ}
     {U : Set (Pn k p)} {V : Set (Pn k q)} {W : Set (Pn k n)}
     {φ : {x : Pn k p // x ∈ U} → Pn k q} {ψ : {x : Pn k q // x ∈ V} → Pn k n}
     (hφ : IsProjMorphism U V φ) (hψ : IsProjMorphism V W ψ)
     (hcomp : ∀ p : {x : Pn k p // x ∈ U}, φ p ∈ V) :
-    IsProjMorphism U W (fun p => ψ ⟨φ p, hcomp p⟩) :=
-  ⟨sorry, fun p => hψ.maps_into ⟨φ p, hcomp p⟩⟩
+    IsProjMorphism U W (fun p => ψ ⟨φ p, hcomp p⟩) := by
+  refine ⟨?_, fun p => hψ.maps_into ⟨φ p, hcomp p⟩⟩
+  -- Obtain polynomial data for φ and ψ
+  obtain ⟨dφ, fφ, hfφ_hom, hfφ_pt⟩ := hφ.is_poly
+  obtain ⟨dψ, fψ, hfψ_hom, hfψ_pt⟩ := hψ.is_poly
+  -- Composition polynomials: substitute fφ into fψ
+  refine ⟨dφ * dψ, fun l => MvPolynomial.aeval fφ (fψ l), fun l => ?_, fun pt => ?_⟩
+  · -- Homogeneity of degree dφ * dψ
+    exact (hfψ_hom l).aeval fφ hfφ_hom
+  · -- Point-wise data: existence, nonvanishing, and equality
+    obtain ⟨⟨j_φ, hj_φ⟩, hne_φ, hrep_φ⟩ := hfφ_pt pt
+    obtain ⟨⟨j_ψ, hj_ψ⟩, hne_ψ, hrep_ψ⟩ := hfψ_pt ⟨φ pt, hcomp pt⟩
+    -- (φ pt).rep = (c : k) • (fun j => eval pt.rep (fφ j)) for some unit c
+    obtain ⟨c, hc⟩ := exists_unit_smul_rep (fun j => MvPolynomial.eval pt.1.rep (fφ j)) hne_φ
+    have hrep : (φ pt).rep = (c : k) • fun j => MvPolynomial.eval pt.1.rep (fφ j) := by
+      rw [hrep_φ]; simp only [← hc, Units.smul_def]
+    -- Key: eval (φ pt).rep (fψ l) = c^dψ * eval pt.rep (aeval fφ (fψ l))
+    have key_eval : ∀ l, MvPolynomial.eval (φ pt).rep (fψ l) =
+        (c : k) ^ dψ * MvPolynomial.eval pt.1.rep (MvPolynomial.aeval fφ (fψ l)) := fun l => by
+      rw [hrep, homogeneous_eval_smul (hfψ_hom l), eval_aeval_eq]
+    -- The composition evaluations are nonzero
+    have hne_comp : (fun l => MvPolynomial.eval pt.1.rep (MvPolynomial.aeval fφ (fψ l))) ≠ 0 := by
+      intro heq
+      apply hne_ψ
+      funext l; simp only [Pi.zero_apply]
+      rw [key_eval l, show MvPolynomial.eval pt.1.rep (MvPolynomial.aeval fφ (fψ l)) = 0 from
+        congr_fun heq l, mul_zero]
+    refine ⟨⟨j_ψ, ?_⟩, hne_comp, ?_⟩
+    · -- ∃ j, eval pt.rep (aeval fφ (fψ j)) ≠ 0
+      intro heq
+      apply hj_ψ
+      rw [key_eval j_ψ, heq, mul_zero]
+    · -- ψ ⟨φ pt, _⟩ = mk k (fun l => eval pt.rep (aeval fφ (fψ l))) hne_comp
+      rw [hrep_ψ, Projectivization.mk_eq_mk_iff k]
+      exact ⟨Units.mk0 ((c : k) ^ dψ) (pow_ne_zero _ (Units.ne_zero c)), by
+        ext l
+        simp only [Units.smul_def, Units.val_mk0, Pi.smul_apply, smul_eq_mul]
+        exact (key_eval l).symm⟩
 
 end Morphisms
 
