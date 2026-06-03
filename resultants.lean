@@ -65,7 +65,9 @@ theorem sylvesterMatrix_n_zero (m n : ℕ) (hmn : 0 < m + n) (hm : 0 < m)
 -- Field-specific results use a field variable.
 section FieldResults
 
-variable {k : Type*} [Field k]
+universe u
+
+variable {k : Type u} [Field k]
 
 /-!
 ### Proposition 5.1
@@ -94,11 +96,43 @@ theorem isCoprime_iff_span_eq_top (f g : Polynomial k) :
 /-- Proposition 5.1: common root over an extension ↔ not coprime. -/
 theorem common_root_iff_not_isCoprime (f g : Polynomial k)
     (hf : 0 < f.natDegree) (hg : 0 < g.natDegree) :
-    (∃ (L : Type*) (_ : Field L) (_ : Algebra k L),
+    (∃ (L : Type u) (_ : Field L) (_ : Algebra k L),
        ∃ α : L, aeval α (f.map (algebraMap k L)) = 0 ∧
                 aeval α (g.map (algebraMap k L)) = 0) ↔
     ¬ IsCoprime f g := by
-  sorry
+  simp_rw [Polynomial.aeval_map_algebraMap]
+  constructor
+  -- (→) A common root kills any Bézout combination, contradicting IsCoprime.
+  · rintro ⟨L, _, _, α, hfα, hgα⟩ ⟨a, b, h⟩
+    have : aeval α (a * f + b * g : Polynomial k) = 1 := by rw [h]; simp
+    simp [map_add, map_mul, hfα, hgα] at this
+  -- (←) If f, g are not coprime, their gcd d has an irreducible factor p.
+  --     The field AdjoinRoot p (same universe u) contains a common root.
+  · intro hcop
+    classical
+    set d := EuclideanDomain.gcd f g
+    have hf_ne : f ≠ 0 := by intro h; simp [h] at hf
+    have hd_ne : d ≠ 0 := by
+      intro h; apply hf_ne
+      have hd : d ∣ f := EuclideanDomain.gcd_dvd_left f g
+      simp only [h, zero_dvd_iff] at hd; exact hd
+    have hd_not_unit : ¬ IsUnit d :=
+      fun hu => hcop (EuclideanDomain.gcd_isUnit_iff.mp hu)
+    obtain ⟨p, hp_irred, hp_dvd_d⟩ :=
+      WfDvdMonoid.exists_irreducible_factor hd_not_unit hd_ne
+    have hp_dvd_f : p ∣ f := dvd_trans hp_dvd_d (EuclideanDomain.gcd_dvd_left f g)
+    have hp_dvd_g : p ∣ g := dvd_trans hp_dvd_d (EuclideanDomain.gcd_dvd_right f g)
+    haveI : Fact (Irreducible p) := ⟨hp_irred⟩
+    -- AdjoinRoot p is a field (p irreducible over a field) in Type u.
+    refine ⟨AdjoinRoot p, inferInstance, inferInstance, AdjoinRoot.root p, ?_, ?_⟩
+    · obtain ⟨r, hr⟩ := hp_dvd_f
+      have hroot : aeval (AdjoinRoot.root p) p = 0 := by
+        rw [AdjoinRoot.aeval_eq]; exact AdjoinRoot.mk_self
+      rw [hr, map_mul, hroot, zero_mul]
+    · obtain ⟨r, hr⟩ := hp_dvd_g
+      have hroot : aeval (AdjoinRoot.root p) p = 0 := by
+        rw [AdjoinRoot.aeval_eq]; exact AdjoinRoot.mk_self
+      rw [hr, map_mul, hroot, zero_mul]
 
 -- ---------------------------------------------------------------------------
 -- §5.1  Theorem 5.5 — Res(f,g) = 0 ↔ common factor
@@ -180,7 +214,7 @@ noncomputable def discriminant (m : ℕ) (f : Polynomial k) : k :=
 /-- f has a multiple root iff disc(f) = 0. -/
 theorem hasMultipleRoot_iff_discriminant_zero (m : ℕ) (hm : 1 < m) (f : Polynomial k)
     (hfdeg : f.natDegree = m) (hflc : f.leadingCoeff ≠ 0) :
-    (∃ (L : Type*) (_ : Field L) (_ : Algebra k L) (α : L),
+    (∃ (L : Type u) (_ : Field L) (_ : Algebra k L) (α : L),
        (f.map (algebraMap k L)).IsRoot α ∧
        (f.map (algebraMap k L)).derivative.IsRoot α) ↔
     discriminant m f = 0 := by
