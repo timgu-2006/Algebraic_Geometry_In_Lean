@@ -123,7 +123,48 @@ theorem bezout_bounded_degrees (m n : ℕ) (hm : 0 < m) (hn : 0 < n)
     (hcop : IsCoprime f g) :
     ∃ A B : Polynomial k,
       A.natDegree ≤ n - 1 ∧ B.natDegree ≤ m - 1 ∧ A * f + B * g = 1 := by
-  sorry
+  obtain ⟨a₀, b₀, hab⟩ := hcop
+  have hg_ne : g ≠ 0 := by intro h; simp [h] at hgdeg; omega
+  have hf_ne : f ≠ 0 := by intro h; simp [h] at hfdeg; omega
+  have hdiv : g * (a₀ / g) + a₀ % g = a₀ := EuclideanDomain.div_add_mod a₀ g
+  -- A = a₀ % g, B = b₀ + (a₀ / g) * f
+  have hBez : (a₀ % g) * f + (b₀ + (a₀ / g) * f) * g = 1 := by
+    linear_combination f * hdiv + hab
+  refine ⟨a₀ % g, b₀ + (a₀ / g) * f, ?_, ?_, hBez⟩
+  · -- Degree bound on A = a₀ % g: since deg(A) < deg(g) = n, we get deg(A) ≤ n - 1
+    by_cases hA : a₀ % g = 0
+    · simp [hA]
+    · have hd : (a₀ % g).degree < g.degree := EuclideanDomain.mod_lt a₀ hg_ne
+      have : (a₀ % g).natDegree < g.natDegree := Polynomial.natDegree_lt_natDegree hA hd
+      omega
+  · -- Degree bound on B: if deg(B) ≥ m then deg(B*g) ≥ m+n, but A*f+B*g = 1 has degree 0
+    set B := b₀ + (a₀ / g) * f with hB_def
+    by_cases hB : B = 0
+    · simp [hB]
+    · by_contra hBd
+      have hBdeg : m ≤ B.natDegree := by omega
+      have hBg_deg : m + n ≤ (B * g).natDegree := by
+        rw [Polynomial.natDegree_mul hB hg_ne, hgdeg]; omega
+      by_cases hA : a₀ % g = 0
+      · -- If A = 0, then B * g = 1, so natDegree (B * g) = 0, contradiction
+        simp [hA] at hBez
+        have : (B * g).natDegree = 0 := by rw [hBez]; exact Polynomial.natDegree_one
+        omega
+      · -- If A ≠ 0, bound natDegree(A*f) ≤ m+n-1 < natDegree(B*g), so the leading
+        -- term of B*g cannot cancel, giving natDegree(A*f+B*g) = natDegree(B*g) ≥ m+n
+        -- but A*f+B*g = 1 has natDegree 0, contradiction
+        have hA_ndeg : (a₀ % g).natDegree ≤ n - 1 := by
+          have hd : (a₀ % g).degree < g.degree := EuclideanDomain.mod_lt a₀ hg_ne
+          have : (a₀ % g).natDegree < g.natDegree := Polynomial.natDegree_lt_natDegree hA hd
+          omega
+        have hAf_deg : (a₀ % g * f).natDegree ≤ m + n - 1 := by
+          rw [Polynomial.natDegree_mul hA hf_ne, hfdeg]; omega
+        have hstrict : (a₀ % g * f).natDegree < (B * g).natDegree := by omega
+        have hsum_deg : (a₀ % g * f + B * g).natDegree = (B * g).natDegree :=
+          Polynomial.natDegree_add_eq_right_of_natDegree_lt hstrict
+        have hone : (a₀ % g * f + B * g).natDegree = 0 := by
+          rw [hBez]; exact Polynomial.natDegree_one
+        omega
 
 -- ---------------------------------------------------------------------------
 -- §5.1.1  Discriminant
