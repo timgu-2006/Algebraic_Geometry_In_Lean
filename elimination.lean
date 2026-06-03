@@ -118,7 +118,81 @@ theorem graphIdeal_zeroLocus_eq
       (fun i => v (Fin.castAdd m i)) ∈ MvPolynomial.zeroLocus k I ∧
       ∀ j : Fin m, v (Fin.natAdd n j) =
         MvPolynomial.aeval (fun i => v (Fin.castAdd m i)) (φ j)} := by
-  sorry
+  have vcomp_eq : ∀ v : Fin (n + m) → k,
+      (fun i => v (Fin.castAdd m i)) = v ∘ Fin.castAdd m := fun v => rfl
+  ext v
+  simp only [Set.mem_setOf_eq]
+  rw [MvPolynomial.mem_zeroLocus_iff]
+  constructor
+  · -- Forward: if v vanishes on graphIdeal, extract the two conditions
+    intro h
+    simp only [graphIdeal] at h
+    have hA : ∀ f ∈ I.map (MvPolynomial.rename (Fin.castAdd m)), MvPolynomial.aeval v f = 0 :=
+      fun f hf => h f (Ideal.mem_sup_left hf)
+    have hB : ∀ f ∈ span (⋃ j : Fin m,
+        {MvPolynomial.X (Fin.natAdd n j) - MvPolynomial.rename (Fin.castAdd m) (φ j)}),
+        MvPolynomial.aeval v f = 0 :=
+      fun f hf => h f (Ideal.mem_sup_right hf)
+    refine ⟨?_, ?_⟩
+    · -- Condition 1: (fun i => v (castAdd m i)) ∈ zeroLocus k I
+      rw [MvPolynomial.mem_zeroLocus_iff, vcomp_eq]
+      intro g hg
+      have hmem : MvPolynomial.rename (Fin.castAdd m) g ∈
+          I.map (MvPolynomial.rename (Fin.castAdd m)) :=
+        Ideal.mem_map_of_mem _ hg
+      have hval := hA _ hmem
+      rwa [MvPolynomial.aeval_rename] at hval
+    · -- Condition 2: v (natAdd n j) = aeval (fun i => v (castAdd m i)) (φ j)
+      intro j
+      rw [vcomp_eq]
+      have hgen : MvPolynomial.X (Fin.natAdd n j) - MvPolynomial.rename (Fin.castAdd m) (φ j) ∈
+          span (⋃ j : Fin m,
+            {MvPolynomial.X (Fin.natAdd n j) -
+              MvPolynomial.rename (Fin.castAdd m) (φ j)}) := by
+        apply Ideal.subset_span
+        simp only [Set.mem_iUnion, Set.mem_singleton_iff]
+        exact ⟨j, rfl⟩
+      have hval := hB _ hgen
+      simp only [map_sub, MvPolynomial.aeval_X, MvPolynomial.aeval_rename] at hval
+      exact sub_eq_zero.mp hval
+  · -- Backward: if v satisfies both conditions, it vanishes on graphIdeal
+    rintro ⟨h1, h2⟩
+    simp only [graphIdeal]
+    rw [MvPolynomial.mem_zeroLocus_iff, vcomp_eq] at h1
+    have h2' : ∀ j : Fin m, v (Fin.natAdd n j) = MvPolynomial.aeval (v ∘ Fin.castAdd m) (φ j) :=
+      fun j => by rw [← vcomp_eq]; exact h2 j
+    intro f hf
+    -- f ∈ A ⊔ B, write f = a + b
+    rw [Submodule.mem_sup] at hf
+    obtain ⟨a, ha, b, hb, rfl⟩ := hf
+    simp only [map_add]
+    -- Show aeval v a = 0
+    have hva : MvPolynomial.aeval v a = 0 := by
+      suffices hle : I.map (MvPolynomial.rename (Fin.castAdd m)) ≤
+          RingHom.ker (MvPolynomial.aeval v) by
+        exact hle ha
+      rw [Ideal.map_le_iff_le_comap]
+      intro g hg
+      simp only [Ideal.mem_comap, RingHom.mem_ker, MvPolynomial.aeval_rename]
+      exact h1 g hg
+    -- Show aeval v b = 0
+    have hvb : MvPolynomial.aeval v b = 0 := by
+      have hvanish : ∀ j : Fin m, MvPolynomial.aeval v
+          (MvPolynomial.X (Fin.natAdd n j) - MvPolynomial.rename (Fin.castAdd m) (φ j)) = 0 := by
+        intro j
+        simp only [map_sub, MvPolynomial.aeval_X, MvPolynomial.aeval_rename]
+        exact sub_eq_zero.mpr (h2' j)
+      have hle : span (⋃ j : Fin m,
+          {MvPolynomial.X (Fin.natAdd n j) -
+            MvPolynomial.rename (Fin.castAdd m) (φ j)}) ≤
+          RingHom.ker (MvPolynomial.aeval v) := by
+        rw [Ideal.span_le]
+        intro x hx
+        simp only [Set.mem_iUnion, Set.mem_singleton_iff] at hx
+        obtain ⟨j, rfl⟩ := hx
+        exact hvanish j
+      exact hle hb
+    simp [hva, hvb]
 
 -- ---------------------------------------------------------------------------
 -- §4.1  Theorem 4.8 — Elimination Theorem (Gröbner basis version)
