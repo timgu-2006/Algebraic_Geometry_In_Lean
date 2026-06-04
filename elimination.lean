@@ -1,6 +1,7 @@
 import Mathlib
+import affine_varieties
 
-open MvPolynomial Set Ideal Finset
+open MvPolynomial Set Ideal Finset AffineVarieties
 
 /-!
 # Elimination Theory — Hassett Chapter 4
@@ -95,12 +96,55 @@ theorem projection_image_subset_eliminationLocus
     V(J_n).  The forward inclusion is proved above; the reverse inclusion
     requires the Nullstellensatz and that J = I(V(J)) (which holds when k is
     algebraically closed), so we sorry this direction. -/
-theorem closure_projection_eq_eliminationLocus
-    (n m : ℕ) (J : Ideal (MvPolynomial (Fin (n + m)) k))
-    [TopologicalSpace (Fin m → k)] :
-    closure (projection n m '' MvPolynomial.zeroLocus k J) =
+theorem closure_projection_eq_eliminationLocus [IsAlgClosed k]
+    (n m : ℕ) (J : Ideal (MvPolynomial (Fin (n + m)) k)) :
+    @closure _ (zariskiTopology k (Fin m)) (projection n m '' MvPolynomial.zeroLocus k J) =
     MvPolynomial.zeroLocus k (eliminationIdeal n J) := by
-  sorry
+  letI : TopologicalSpace (Fin m → k) := zariskiTopology k (Fin m)
+  -- projection n m = (· ∘ Fin.natAdd n), eliminationIdeal n J = J.comap(rename(Fin.natAdd n))
+  apply Set.eq_of_subset_of_subset
+  · -- Forward: closure(π(V(J))) ⊆ V(eliminationIdeal n J)
+    apply closure_minimal _ (isClosed_zeroLocus _)
+    rintro _ ⟨x, hx, rfl⟩
+    rw [MvPolynomial.mem_zeroLocus_iff]
+    intro f hf
+    rw [mem_eliminationIdeal_iff] at hf
+    have h := MvPolynomial.mem_zeroLocus_iff.mp hx _ hf
+    show aeval (x ∘ Fin.natAdd n) f = 0
+    rw [← MvPolynomial.aeval_rename]
+    exact h
+  · -- Backward: V(eliminationIdeal n J) ⊆ closure(π(V(J)))
+    intro q hq
+    rw [mem_closure_iff]
+    intro U hU hqU
+    rw [zariskiTopology_isOpen_iff] at hU
+    simp only [Set.mem_setOf_eq] at hU
+    obtain ⟨J', hJ'⟩ := hU
+    have hU_eq : U = (MvPolynomial.zeroLocus k J')ᶜ := by
+      rw [← compl_compl U, hJ']
+    have hqnotV : q ∉ MvPolynomial.zeroLocus k J' := by
+      intro hq'; rw [← hJ'] at hq'; exact absurd hqU hq'
+    rw [MvPolynomial.mem_zeroLocus_iff] at hqnotV
+    push Not at hqnotV
+    obtain ⟨f, hfJ', hfq⟩ := hqnotV
+    -- rename (Fin.natAdd n) f ∉ J.radical
+    have hf_not_rad : MvPolynomial.rename (Fin.natAdd n) f ∉ J.radical := fun hrad => by
+      have hfrad_comap : f ∈ (eliminationIdeal n J).radical := by
+        rw [eliminationIdeal, ← Ideal.comap_radical]
+        exact Ideal.mem_comap.mpr hrad
+      exact hfq (MvPolynomial.mem_vanishingIdeal_iff.mp
+        (MvPolynomial.radical_le_vanishingIdeal_zeroLocus (K := k) _ hfrad_comap) q hq)
+    -- Nullstellensatz: ∃ x ∈ V(J), aeval x (rename (Fin.natAdd n) f) ≠ 0
+    rw [← MvPolynomial.vanishingIdeal_zeroLocus_eq_radical (K := k)] at hf_not_rad
+    rw [MvPolynomial.mem_vanishingIdeal_iff] at hf_not_rad
+    push Not at hf_not_rad
+    obtain ⟨x, hxJ, hfx⟩ := hf_not_rad
+    rw [MvPolynomial.aeval_rename] at hfx
+    -- x ∘ Fin.natAdd n ∈ π(V(J)) ∩ U
+    have hxnotV : x ∘ Fin.natAdd n ∉ MvPolynomial.zeroLocus k J' := by
+      rw [MvPolynomial.mem_zeroLocus_iff]; push Not; exact ⟨f, hfJ', hfx⟩
+    refine ⟨x ∘ Fin.natAdd n, ?_, ⟨x, hxJ, rfl⟩⟩
+    rw [hU_eq]; exact hxnotV
 
 -- ---------------------------------------------------------------------------
 -- §4.1  Proposition 4.5 — the variety of the graph ideal is the graph

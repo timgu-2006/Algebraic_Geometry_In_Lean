@@ -175,7 +175,7 @@ variable {k : Type*} [Field k] {σ τ : Type*}
     (fun A ⟨I, hI⟩ B ⟨J, hJ⟩ =>
       ⟨I * J, by rw [hI, hJ, ← zeroLocus_mul]⟩)
 
-private lemma zariskiTopology_isOpen_iff (s : Set (σ → k)) :
+lemma zariskiTopology_isOpen_iff (s : Set (σ → k)) :
     @IsOpen _ (zariskiTopology k σ) s ↔
     sᶜ ∈ ({C | ∃ I : Ideal (MvPolynomial σ k), C = zeroLocus k I} : Set (Set (σ → k))) := by
   unfold zariskiTopology TopologicalSpace.ofClosed
