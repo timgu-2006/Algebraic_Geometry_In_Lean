@@ -204,12 +204,16 @@ theorem graphIdeal_zeroLocus_eq
     (x₁ > … > xₙ > y₁ > … > yₘ), then G ∩ k[y₁,…,yₘ] is a Gröbner
     basis of the elimination ideal J_n.
 
-    This is a deep result requiring Buchberger theory and monomial orders. -/
+    This is a deep result requiring Buchberger theory and monomial orders.
+    The statement as formalised here only asserts finite generation of the
+    elimination ideal, which follows from Noetherianness of `k[y₁,…,yₘ]`. -/
 theorem elimination_theorem
     (n m : ℕ) (J : Ideal (MvPolynomial (Fin (n + m)) k)) :
     ∃ (G : Finset (MvPolynomial (Fin m) k)),
       span (G : Set (MvPolynomial (Fin m) k)) = eliminationIdeal n J := by
-  sorry
+  have hfg : (eliminationIdeal n J).FG := IsNoetherian.noetherian _
+  obtain ⟨S, hS⟩ := hfg
+  exact ⟨S, hS⟩
 
 -- ---------------------------------------------------------------------------
 -- §4.3  Secant varieties and joins
