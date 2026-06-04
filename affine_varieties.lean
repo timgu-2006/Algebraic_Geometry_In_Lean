@@ -764,11 +764,60 @@ theorem isClosed_graphOf (I : Ideal (MvPolynomial σ k)) (f : τ → MvPolynomia
 /-- **Hassett Thm 4.3** (Projection / Elimination Theorem) — For `V(J) ⊆ 𝔸^(σ⊕τ)(k)`,
 the Zariski closure of the projection `π(V(J))` onto `τ → k` equals `V(J ∩ k[τ])`,
 where `J ∩ k[τ]` is the elimination ideal `J.comap (rename inr)`.
-(Proof requires the Gröbner basis Elimination Theorem.) -/
-theorem closure_projection_eq (J : Ideal (MvPolynomial (σ ⊕ τ) k)) :
+
+Requires `k` algebraically closed (for the Nullstellensatz `I(V(I)) = √I`) and
+`σ`, `τ` finite (to apply the Mathlib Nullstellensatz). -/
+theorem closure_projection_eq [IsAlgClosed k] [Finite σ] [Finite τ]
+    (J : Ideal (MvPolynomial (σ ⊕ τ) k)) :
     @closure _ (zariskiTopology k τ) ((· ∘ Sum.inr) '' zeroLocus k J) =
-    zeroLocus k (J.comap (MvPolynomial.rename Sum.inr).toRingHom) :=
-  sorry
+    zeroLocus k (J.comap (MvPolynomial.rename Sum.inr).toRingHom) := by
+  letI : TopologicalSpace (τ → k) := zariskiTopology k τ
+  apply Set.eq_of_subset_of_subset
+  · -- Forward: closure(π(V(J))) ⊆ V(R)
+    apply closure_minimal _ (isClosed_zeroLocus _)
+    rintro q ⟨x, hx, rfl⟩
+    rw [mem_zeroLocus_iff]
+    intro f hf
+    rw [Ideal.mem_comap] at hf
+    have h := mem_zeroLocus_iff.mp hx _ hf
+    rw [← MvPolynomial.aeval_rename]
+    exact h
+  · -- Backward: V(R) ⊆ closure(π(V(J)))
+    -- For q ∈ V(R) and any Zariski open U = V(J')ᶜ ∋ q:
+    -- rename Sum.inr f ∉ √J (else aeval q f = 0 contradicting f(q) ≠ 0).
+    -- Nullstellensatz then gives x ∈ V(J) with (rename Sum.inr f)(x) ≠ 0,
+    -- so x ∘ Sum.inr ∈ π(V(J)) ∩ U.
+    intro q hq
+    rw [mem_closure_iff]
+    intro U hU hqU
+    rw [zariskiTopology_isOpen_iff] at hU
+    simp only [Set.mem_setOf_eq] at hU
+    obtain ⟨J', hJ'⟩ := hU
+    -- U = (zeroLocus k J')ᶜ
+    have hU_eq : U = (zeroLocus k J')ᶜ := by
+      rw [← compl_compl U, hJ']
+    have hqnotV : q ∉ zeroLocus k J' := by
+      intro hq'; rw [← hJ'] at hq'; exact absurd hqU hq'
+    rw [mem_zeroLocus_iff] at hqnotV
+    push Not at hqnotV
+    obtain ⟨f, hfJ', hfq⟩ := hqnotV
+    -- rename Sum.inr f ∉ J.radical
+    have hf_not_rad : MvPolynomial.rename Sum.inr f ∉ J.radical := fun hrad => by
+      have hfrad_comap : f ∈ (J.comap (MvPolynomial.rename Sum.inr).toRingHom).radical := by
+        rw [← Ideal.comap_radical]; exact Ideal.mem_comap.mpr hrad
+      exact hfq (MvPolynomial.mem_vanishingIdeal_iff.mp
+        (MvPolynomial.radical_le_vanishingIdeal_zeroLocus (K := k) _ hfrad_comap) q hq)
+    -- Nullstellensatz: ∃ x ∈ V(J), aeval x (rename Sum.inr f) ≠ 0
+    rw [← MvPolynomial.vanishingIdeal_zeroLocus_eq_radical (K := k)] at hf_not_rad
+    rw [MvPolynomial.mem_vanishingIdeal_iff] at hf_not_rad
+    push Not at hf_not_rad
+    obtain ⟨x, hxJ, hfx⟩ := hf_not_rad
+    rw [MvPolynomial.aeval_rename] at hfx
+    -- x ∘ Sum.inr ∈ π(V(J)) ∩ U
+    have hxnotV : x ∘ Sum.inr ∉ zeroLocus k J' := by
+      rw [mem_zeroLocus_iff]; push Not; exact ⟨f, hfJ', hfx⟩
+    refine ⟨x ∘ Sum.inr, ?_, ⟨x, hxJ, rfl⟩⟩
+    rw [hU_eq]; exact hxnotV
 
 end ProjectionsAndGraphs
 
@@ -1220,13 +1269,25 @@ theorem varietyDim_empty :
     Ideal.Quotient.subsingleton_iff.mpr vanishingIdeal_empty
   exact ringKrullDim_eq_bot_of_subsingleton
 
-/-- Affine space `𝔸^σ(k)` has Krull dimension `|σ|` when `σ` is finite.
-Proof: `coordinateRing Set.univ ≅ MvPolynomial σ k`, and `ringKrullDim (MvPolynomial (Fin n) k) = n`
-for a field `k` (currently `proof_wanted` in Mathlib as
-`MvPolynomial.fin_ringKrullDim_eq_add_of_isNoetherianRing`). -/
-theorem varietyDim_affineSpace [Fintype σ] :
-    varietyDim (Set.univ : Set (σ → k)) = Fintype.card σ :=
-  sorry
+/-- Affine space `𝔸^σ(k)` has Krull dimension `|σ|` when `σ` is finite and `k` is infinite.
+Proof: for infinite `k`, `vanishingIdeal k Set.univ = ⊥` (by `MvPolynomial.funext_iff`), so
+`coordinateRing Set.univ ≅ MvPolynomial σ k`, and
+`ringKrullDim (MvPolynomial σ k) = ringKrullDim k + Nat.card σ = 0 + |σ| = |σ|`. -/
+theorem varietyDim_affineSpace [Fintype σ] [Infinite k] :
+    varietyDim (Set.univ : Set (σ → k)) = Fintype.card σ := by
+  simp only [varietyDim]
+  have hvan : vanishingIdeal k (Set.univ : Set (σ → k)) = ⊥ := by
+    ext p
+    simp only [mem_vanishingIdeal_iff, Set.mem_univ, forall_true_left,
+               Ideal.mem_bot, MvPolynomial.aeval_eq_eval]
+    constructor
+    · intro h
+      exact MvPolynomial.funext (fun x => by rw [map_zero]; exact h x)
+    · rintro rfl; simp
+  have heq : coordinateRing (Set.univ : Set (σ → k)) ≃+* MvPolynomial σ k :=
+    (Ideal.quotEquivOfEq hvan).trans (RingEquiv.quotientBot _)
+  rw [ringKrullDim_eq_of_ringEquiv heq, MvPolynomial.ringKrullDim_of_isNoetherianRing]
+  simp [Nat.card_eq_fintype_card]
 
 /-- Dimension is monotone: if `V ⊆ W` (as closed sets), then `dim V ≤ dim W`.
 Proof: the inclusion `W ↪ V` induces a surjection `k[V] ↠ k[W]` on coordinate rings,
